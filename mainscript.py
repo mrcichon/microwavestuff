@@ -76,7 +76,7 @@ class App(tk.Tk):
         self.regexPattern = tk.StringVar(value=r'_(\d+)ml')
         self.regexParam = tk.StringVar(value="s21")
         self.regexHighlightChk = tk.BooleanVar(value=True)
-        self.regexStrictMonotonic = tk.BooleanVar(value=False)  # Strict monotonicity
+        self.regexStrictMonotonic = tk.BooleanVar(value=False)  
         self.regexGateChk = tk.BooleanVar(value=False)
         self.regexGroup = tk.IntVar(value=1)
         self.regexSpans = []
@@ -92,7 +92,7 @@ class App(tk.Tk):
         self.varS21 = tk.BooleanVar(value=True)
         self.varMag = tk.BooleanVar(value=True)
         self.varPhase = tk.BooleanVar(value=True)
-        self.varDetrend = tk.BooleanVar(value=True)  # Default to detrending
+        self.varDetrend = tk.BooleanVar(value=True)  
         self.varData = None
         self.varMrk = []
         self.varMtxt = []
@@ -236,13 +236,13 @@ class App(tk.Tk):
         self.exportRangesBtn = ttk.Button(regexCtrlFrame, text="Export ranges", command=self._exportRanges)
         self.exportRangesBtn.pack(side=tk.LEFT, padx=3)
         
-        # Add help text for strict monotonic
+        
         strictHelpFrame = ttk.Frame(self.regexBox)
         strictHelpFrame.pack(anchor="w", pady=(2,0))
         ttk.Label(strictHelpFrame, text="Strict: no equal consecutive values; Non-strict: allows equal values", 
                  font=("", 8), foreground="gray").pack(anchor="w")
         
-        # Gating controls for regex
+        
         gatingFrame = ttk.Frame(self.regexBox)
         gatingFrame.pack(anchor="w", pady=(3,0))
         self.regexGateChk = tk.BooleanVar(value=False)
@@ -419,11 +419,11 @@ class App(tk.Tk):
             diffs = np.diff(values)
             
             if strict_monotonic:
-                # Strict monotonicity: all differences must be strictly positive or negative
+                
                 if np.all(diffs > 0) or np.all(diffs < 0):
                     ordered_indices.append(i)
             else:
-                # Non-strict monotonicity: allow equal values
+                
                 if np.all(diffs >= 0) or np.all(diffs <= 0):
                     ordered_indices.append(i)
         
@@ -1128,25 +1128,24 @@ class App(tk.Tk):
         self._updOverlapPlot()
 
     def _normalizeForVariance(self, data, is_phase=False):
-        """Normalize data for variance analysis following basic_stats.py approach"""
         if is_phase and self.varDetrend.get():
-            # For phase: detrend then z-score normalize
+            
             n_samples, n_frequencies = data.shape
             detrended = np.zeros_like(data)
             
             for i in range(n_samples):
-                # Fit linear trend
+                
                 x = np.arange(n_frequencies)
                 coeffs = np.polyfit(x, data[i], 1)
                 trend = np.polyval(coeffs, x)
                 detrended[i] = data[i] - trend
             
-            # Z-score normalize the detrended data
+            
             mean = np.mean(detrended)
             std = np.std(detrended) + 1e-10
             return (detrended - mean) / std
         else:
-            # For magnitude or phase without detrending: standard z-score
+            
             mean = np.mean(data)
             std = np.std(data) + 1e-10
             return (data - mean) / std
@@ -1157,7 +1156,7 @@ class App(tk.Tk):
         sstr = f"{fmin}-{fmax}ghz"
         
         param_list = []
-        component_types = []  # Track which are magnitude vs phase
+        component_types = []  
         
         if self.varS11.get():
             if self.varMag.get():
@@ -1191,7 +1190,7 @@ class App(tk.Tk):
         if not param_list:
             return None
         
-        # Collect raw data first
+       
         raw_data_by_param = {param: [] for param in param_list}
         file_count = 0
         freq_ref = None
@@ -1211,7 +1210,7 @@ class App(tk.Tk):
                 elif len(ntw.f) != len(freq_ref) or not np.allclose(ntw.f, freq_ref, rtol=1e-6):
                     continue
                 
-                # Collect data for each S-parameter
+                
                 for sparam in ['s11', 's12', 's21', 's22']:
                     if any(sparam in p for p in param_list):
                         s_data = getattr(ntw, sparam)
@@ -1221,7 +1220,7 @@ class App(tk.Tk):
                         
                         if f'{sparam}_phase' in param_list:
                             phase_rad = np.angle(s_data.s.flatten())
-                            # Check if phase needs unwrapping (large jumps indicate wrapping)
+                            
                             phase_deg = np.degrees(phase_rad)
                             if np.any(np.abs(np.diff(phase_deg)) > 180):
                                 phase_unwrapped_rad = np.unwrap(phase_rad)
@@ -1239,33 +1238,33 @@ class App(tk.Tk):
         n_frequencies = len(freq_ref)
         n_params = len(param_list)
         
-        # Normalize each parameter type separately
+        
         normalized_data = np.zeros((file_count, n_frequencies, n_params))
         
         for i, (param, comp_type) in enumerate(zip(param_list, component_types)):
-            # Convert list to array: (samples, frequencies)
+            
             param_data = np.array(raw_data_by_param[param])
             
-            # Normalize based on type
+            
             normalized = self._normalizeForVariance(param_data, is_phase=(comp_type == 'phase'))
             normalized_data[:, :, i] = normalized
         
-        # Calculate variance on normalized data
+        
         variance_by_param = np.var(normalized_data, axis=0, ddof=1)
         total_variance = np.sum(variance_by_param, axis=1)
         
-        # Calculate percentage contribution
+        
         variance_contribution = np.zeros_like(variance_by_param)
         for freq_idx in range(n_frequencies):
             if total_variance[freq_idx] > 1e-10:
                 variance_contribution[freq_idx] = (variance_by_param[freq_idx] / 
                                                  total_variance[freq_idx]) * 100
         
-        # Stats on normalized data
+        
         mean_by_param = np.mean(normalized_data, axis=0)
         std_by_param = np.std(normalized_data, axis=0, ddof=1)
         
-        # Create normalization info string
+        
         if self.varDetrend.get():
             norm_info = 'Phase: detrended+z-score, Magnitude: z-score'
         else:
@@ -1315,7 +1314,7 @@ class App(tk.Tk):
         for i in range(n_params):
             y[i] = var_contrib[:, i]
         
-        # Use distinct colors for better visibility
+        
         if n_params <= 8:
             colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', 
                      '#9467bd', '#8c564b', '#e377c2', '#7f7f7f'][:n_params]
@@ -1325,7 +1324,7 @@ class App(tk.Tk):
         self.axV.stackplot(freqs, y, labels=param_labels[:n_params], 
                           colors=colors, alpha=0.8)
         
-        # Mark high variance frequencies
+        
         mean_var = np.mean(self.varData['total_variance'])
         std_var = np.std(self.varData['total_variance'])
         high_var_mask = self.varData['total_variance'] > mean_var + 2 * std_var
@@ -1339,16 +1338,16 @@ class App(tk.Tk):
         self.axV.set_ylabel('Variance Contribution (%)')
         self.axV.set_title(f'Normalized Variance Contribution by Component ({self.varData["file_count"]} files)')
         self.axV.grid(True, alpha=0.3)
-        self.axV.set_ylim(0, 105)  # Give a bit more space at the top
+        self.axV.set_ylim(0, 105)  
         
         if n_params <= 8:
             self.axV.legend(loc='upper right', fontsize=9)
         
-        # Store data for markers
+        
         self.varFreqs = freqs
         self.varTotalVar = self.varData['total_variance']
         
-        # Update text widget
+        
         mean_var = np.mean(self.varData['total_variance'])
         std_var = np.std(self.varData['total_variance'])
         self.txt.config(state=tk.NORMAL)
@@ -1363,7 +1362,7 @@ class App(tk.Tk):
             self.txt.insert(tk.END, txt)
         self.txt.config(state=tk.DISABLED)
         
-        # Adjust layout to prevent marker cutoff
+        
         self.figV.tight_layout(rect=[0, 0, 1, 0.95])  # Leave space at top
         self.cvV.draw()
 
@@ -1413,15 +1412,15 @@ class App(tk.Tk):
         freq = self.varFreqs[idx]
         var = self.varTotalVar[idx]
         
-        # Place marker slightly below 100% to ensure visibility
-        y_pos = 95  # Fixed position at 95%
+        
+        y_pos = 97  # Fixed position at 95%
         
         m, = self.axV.plot([freq], [y_pos], 'ro', markersize=10, picker=7)
         
-        # Add annotation with downward pointing arrow
+        
         t = self.axV.annotate(
             f"{freq/1e6:.3f} MHz\nVar: {var:.4f}",
-            xy=(freq, y_pos), xytext=(10, -30),  # Place text below marker
+            xy=(freq, y_pos), xytext=(10, -30),  
             textcoords="offset points",
             bbox=dict(boxstyle="round,pad=0.2", fc="yellow", alpha=0.8),
             arrowprops=dict(arrowstyle="->", color='red', lw=1.5),
@@ -1431,11 +1430,11 @@ class App(tk.Tk):
         
         self.varMrk.append({'marker': m, 'text': t})
         
-        # Add detailed breakdown to text
+        
         txt = f"Variance marker: {freq/1e6:.3f} MHz\n"
         txt += f"  Total variance: {var:.4f}\n"
         
-        # Add breakdown by parameter
+        
         param_labels = []
         for param in self.varData['param_list']:
             parts = param.split('_')
