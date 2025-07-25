@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
+import os
+import threading
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -32,7 +34,6 @@ def loadFile(p):
     return rf.Network(t.name)
 
 class ValidatedDoubleVar(tk.DoubleVar):
-    """DoubleVar with validation and fallback to previous valid value"""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._last_valid = self.get()
@@ -76,7 +77,7 @@ class App(tk.Tk):
         self.regexPattern = tk.StringVar(value=r'_(\d+)ml')
         self.regexParam = tk.StringVar(value="s21")
         self.regexHighlightChk = tk.BooleanVar(value=True)
-        self.regexStrictMonotonic = tk.BooleanVar(value=False)  
+        self.regexStrictMonotonic = tk.BooleanVar(value=False)
         self.regexGateChk = tk.BooleanVar(value=False)
         self.regexGroup = tk.IntVar(value=1)
         self.regexSpans = []
@@ -92,17 +93,43 @@ class App(tk.Tk):
         self.varS21 = tk.BooleanVar(value=True)
         self.varMag = tk.BooleanVar(value=True)
         self.varPhase = tk.BooleanVar(value=True)
-        self.varDetrend = tk.BooleanVar(value=True)  
+        self.varDetrend = tk.BooleanVar(value=True)
         self.varData = None
         self.varMrk = []
         self.varMtxt = []
         self._blkNextVar = False
         
+        self.trainDataDirs = []
+        self.trainHiddenDim = tk.IntVar(value=256)
+        self.trainLatentDim = tk.IntVar(value=64)
+        self.trainDropout = tk.DoubleVar(value=0.1)
+        self.trainLR = tk.DoubleVar(value=0.001)
+        self.trainWeightDecay = tk.DoubleVar(value=0.001)
+        self.trainEpochs = tk.IntVar(value=200)
+        self.trainPatience = tk.IntVar(value=25)
+        self.trainLossFn = tk.StringVar(value="mse")
+        self.trainAugment = tk.BooleanVar(value=False)
+        self.trainNoise = tk.DoubleVar(value=0.05)
+        self.trainBatchNorm = tk.BooleanVar(value=True)
+        self.trainDevice = tk.StringVar(value="cpu")
+        self.modelTrainingAvailable = False
+        
+        try:
+            import water_pred
+            import torch
+            self.modelTrainingAvailable = True
+            self.water_pred = water_pred
+            self.torch = torch
+            if torch.cuda.is_available():
+                self.trainDevice.set("cuda")
+        except ImportError:
+            self.water_pred = None
+            self.torch = None
+        
         self._makeUi()
         self._updAll()
 
     def _validateNumeric(self, widget, var, callback=None):
-        """Add validation to numeric entry widget"""
         def validate_and_update(*args):
             val = widget.get()
             if var.set(val):
@@ -236,12 +263,10 @@ class App(tk.Tk):
         self.exportRangesBtn = ttk.Button(regexCtrlFrame, text="Export ranges", command=self._exportRanges)
         self.exportRangesBtn.pack(side=tk.LEFT, padx=3)
         
-        
         strictHelpFrame = ttk.Frame(self.regexBox)
         strictHelpFrame.pack(anchor="w", pady=(2,0))
         ttk.Label(strictHelpFrame, text="Strict: no equal consecutive values; Non-strict: allows equal values", 
                  font=("", 8), foreground="gray").pack(anchor="w")
-        
         
         gatingFrame = ttk.Frame(self.regexBox)
         gatingFrame.pack(anchor="w", pady=(3,0))
@@ -318,6 +343,103 @@ class App(tk.Tk):
         btnFrame2.pack(anchor="w", pady=(5,0))
         ttk.Button(btnFrame2, text="Clear markers", command=self._clearVarMarkers).pack(side=tk.LEFT, padx=(0,5))
         ttk.Button(btnFrame2, text="Export variance data", command=self._exportVariance).pack(side=tk.LEFT)
+        
+        self.trainBox = ttk.Frame(lfrm)
+        
+        if self.modelTrainingAvailable:
+            ttk.Label(self.trainBox, text="Training Data Directories:").pack(anchor="w", pady=(5,0))
+            dirFrame = ttk.Frame(self.trainBox)
+            dirFrame.pack(anchor="w", fill=tk.X, pady=(2,0))
+            self.trainDirListbox = tk.Listbox(dirFrame, height=4, width=40)
+            self.trainDirListbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            dirBtnFrame = ttk.Frame(dirFrame)
+            dirBtnFrame.pack(side=tk.LEFT, padx=(5,0))
+            ttk.Button(dirBtnFrame, text="Add", command=self._addTrainDir, width=8).pack(pady=(0,2))
+            ttk.Button(dirBtnFrame, text="Remove", command=self._removeTrainDir, width=8).pack(pady=(0,2))
+            ttk.Button(dirBtnFrame, text="Clear", command=self._clearTrainDirs, width=8).pack()
+            
+            ttk.Label(self.trainBox, text="Model Configuration:", font=("", 9, "bold")).pack(anchor="w", pady=(10,5))
+            
+            archFrame = ttk.LabelFrame(self.trainBox, text="Architecture", padding=5)
+            archFrame.pack(anchor="w", fill=tk.X, pady=(0,5))
+            
+            row1 = ttk.Frame(archFrame)
+            row1.pack(anchor="w", pady=2)
+            ttk.Label(row1, text="Hidden dim:").pack(side=tk.LEFT)
+            ttk.Entry(row1, textvariable=self.trainHiddenDim, width=8).pack(side=tk.LEFT, padx=(5,15))
+            ttk.Label(row1, text="Latent dim:").pack(side=tk.LEFT)
+            ttk.Entry(row1, textvariable=self.trainLatentDim, width=8).pack(side=tk.LEFT, padx=(5,0))
+            
+            row2 = ttk.Frame(archFrame)
+            row2.pack(anchor="w", pady=2)
+            ttk.Label(row2, text="Dropout:").pack(side=tk.LEFT)
+            ttk.Entry(row2, textvariable=self.trainDropout, width=8).pack(side=tk.LEFT, padx=(5,15))
+            ttk.Checkbutton(row2, text="Batch norm", variable=self.trainBatchNorm).pack(side=tk.LEFT)
+            
+            trainFrame = ttk.LabelFrame(self.trainBox, text="Training", padding=5)
+            trainFrame.pack(anchor="w", fill=tk.X, pady=(0,5))
+            
+            row3 = ttk.Frame(trainFrame)
+            row3.pack(anchor="w", pady=2)
+            ttk.Label(row3, text="Learning rate:").pack(side=tk.LEFT)
+            lr_entry = ttk.Entry(row3, textvariable=self.trainLR, width=10)
+            lr_entry.pack(side=tk.LEFT, padx=(5,15))
+            ttk.Label(row3, text="Weight decay:").pack(side=tk.LEFT)
+            wd_entry = ttk.Entry(row3, textvariable=self.trainWeightDecay, width=10)
+            wd_entry.pack(side=tk.LEFT, padx=(5,0))
+            
+            row4 = ttk.Frame(trainFrame)
+            row4.pack(anchor="w", pady=2)
+            ttk.Label(row4, text="Epochs:").pack(side=tk.LEFT)
+            ttk.Entry(row4, textvariable=self.trainEpochs, width=8).pack(side=tk.LEFT, padx=(5,15))
+            ttk.Label(row4, text="Patience:").pack(side=tk.LEFT)
+            ttk.Entry(row4, textvariable=self.trainPatience, width=8).pack(side=tk.LEFT, padx=(5,0))
+            
+            row5 = ttk.Frame(trainFrame)
+            row5.pack(anchor="w", pady=2)
+            ttk.Label(row5, text="Loss:").pack(side=tk.LEFT)
+            lossCombo = ttk.Combobox(row5, textvariable=self.trainLossFn, width=10, 
+                                    values=["mse", "mae", "huber", "smooth_l1"], state="readonly")
+            lossCombo.pack(side=tk.LEFT, padx=(5,15))
+            ttk.Label(row5, text="Device:").pack(side=tk.LEFT)
+            deviceCombo = ttk.Combobox(row5, textvariable=self.trainDevice, width=8,
+                                      values=["cpu", "cuda"], state="readonly")
+            deviceCombo.pack(side=tk.LEFT, padx=(5,0))
+            
+            augFrame = ttk.LabelFrame(self.trainBox, text="Augmentation", padding=5)
+            augFrame.pack(anchor="w", fill=tk.X, pady=(0,5))
+            
+            augRow = ttk.Frame(augFrame)
+            augRow.pack(anchor="w")
+            ttk.Checkbutton(augRow, text="Enable augmentation", variable=self.trainAugment).pack(side=tk.LEFT)
+            ttk.Label(augRow, text="Noise std:").pack(side=tk.LEFT, padx=(15,5))
+            ttk.Entry(augRow, textvariable=self.trainNoise, width=8).pack(side=tk.LEFT)
+            
+            actionFrame = ttk.Frame(self.trainBox)
+            actionFrame.pack(anchor="w", pady=(10,0))
+            ttk.Button(actionFrame, text="Run Cross-Validation", command=self._runCrossValidation).pack(side=tk.LEFT, padx=(0,5))
+            ttk.Button(actionFrame, text="Train Final Model", command=self._trainFinalModel).pack(side=tk.LEFT, padx=(0,5))
+            ttk.Button(actionFrame, text="Load Model", command=self._loadModel).pack(side=tk.LEFT, padx=(0,5))
+            ttk.Button(actionFrame, text="Scan Files", command=self._scanTrainingFiles).pack(side=tk.LEFT)
+            
+            self.trainProgress = ttk.Progressbar(self.trainBox, mode='indeterminate')
+            self.trainProgress.pack(fill=tk.X, pady=(10,0))
+            
+        else:
+            msgFrame = ttk.Frame(self.trainBox)
+            msgFrame.pack(expand=True, fill=tk.BOTH, pady=50)
+            ttk.Label(msgFrame, text="Model Training Not Available", 
+                     font=("", 12, "bold")).pack()
+            ttk.Label(msgFrame, text="water_pred.py module not found or PyTorch not installed", 
+                     font=("", 10)).pack(pady=(10,0))
+            ttk.Label(msgFrame, text="To enable model training:", 
+                     font=("", 9)).pack(pady=(20,5))
+            ttk.Label(msgFrame, text="1. Ensure water_pred.py is in the same directory", 
+                     font=("", 9)).pack()
+            ttk.Label(msgFrame, text="2. Install PyTorch: pip install torch", 
+                     font=("", 9)).pack()
+            ttk.Label(msgFrame, text="3. Install other dependencies: scikit-learn, matplotlib", 
+                     font=("", 9)).pack()
 
         nb = ttk.Notebook(self)
         nb.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -361,13 +483,34 @@ class App(tk.Tk):
         
         frmV = ttk.Frame(nb)
         nb.add(frmV, text="Variance Analysis")
-        # Increase figure size and add more padding
         self.figV, self.axV = plt.subplots(figsize=(10,8))
         self.cvV = FigureCanvasTkAgg(self.figV, master=frmV)
         self.cvV.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         self.tbV = NavigationToolbar2Tk(self.cvV, frmV)
         self.tbV.update()
         self.tbV.pack(fill=tk.X)
+        
+        frmM = ttk.Frame(nb)
+        nb.add(frmM, text="Model Training")
+        if self.modelTrainingAvailable:
+            self.figM, (self.axM1, self.axM2) = plt.subplots(1, 2, figsize=(12,5))
+            self.cvM = FigureCanvasTkAgg(self.figM, master=frmM)
+            self.cvM.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            self.tbM = NavigationToolbar2Tk(self.cvM, frmM)
+            self.tbM.update()
+            self.tbM.pack(fill=tk.X)
+            self.axM1.text(0.5, 0.5, "No training results yet", ha="center", va="center", fontsize=12, color="gray")
+            self.axM1.set_xticks([])
+            self.axM1.set_yticks([])
+            self.axM2.text(0.5, 0.5, "Run cross-validation or train a model", ha="center", va="center", fontsize=12, color="gray")
+            self.axM2.set_xticks([])
+            self.axM2.set_yticks([])
+            self.figM.tight_layout()
+            self.cvM.draw()
+        else:
+            lblFrame = ttk.Frame(frmM)
+            lblFrame.pack(expand=True)
+            ttk.Label(lblFrame, text="Model training not available", font=("", 14)).pack()
         
         self.cv.mpl_connect('button_press_event', self._onClick)
         self.cvT.mpl_connect('button_press_event', self._onClick)
@@ -419,11 +562,9 @@ class App(tk.Tk):
             diffs = np.diff(values)
             
             if strict_monotonic:
-                
                 if np.all(diffs > 0) or np.all(diffs < 0):
                     ordered_indices.append(i)
             else:
-                
                 if np.all(diffs >= 0) or np.all(diffs <= 0):
                     ordered_indices.append(i)
         
@@ -448,7 +589,7 @@ class App(tk.Tk):
         self.regexSpans = []
         
         files_data = []
-        all_files_info = []  
+        all_files_info = []
         
         for v, p, d in self.fls:
             fname = Path(p).stem
@@ -508,7 +649,7 @@ class App(tk.Tk):
             return
         
         ranges, freqs, s_matrix, labels = self._analyzeOrderedRanges(files_data)
-        self.regexRanges = ranges  
+        self.regexRanges = ranges
         
         colors = plt.cm.viridis(np.linspace(0, 1, len(labels)))
         
@@ -573,6 +714,7 @@ class App(tk.Tk):
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
+            self.trainBox.pack_forget()
             self.cbox.pack(anchor="w", pady=(2,0))
             self.txt.config(state=tk.NORMAL)
             self.txt.delete(1.0, tk.END)
@@ -585,6 +727,7 @@ class App(tk.Tk):
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
+            self.trainBox.pack_forget()
             self.rbox.pack(anchor="w", pady=(2,0))
             self.gateBox.pack(anchor="w", pady=(8,0))
             self.txt.config(state=tk.NORMAL)
@@ -599,6 +742,7 @@ class App(tk.Tk):
             self.gateBox.pack_forget()
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
+            self.trainBox.pack_forget()
             self.regexBox.pack(anchor="w", pady=(2,0))
             self._updRegexPlot()
         elif tabTxt == "Range Overlaps":
@@ -608,6 +752,7 @@ class App(tk.Tk):
             self.gateBox.pack_forget()
             self.regexBox.pack_forget()
             self.varBox.pack_forget()
+            self.trainBox.pack_forget()
             self.overlapBox.pack(anchor="w", pady=(2,0))
             self._updOverlapPlot()
         elif tabTxt == "Variance Analysis":
@@ -617,6 +762,7 @@ class App(tk.Tk):
             self.gateBox.pack_forget()
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
+            self.trainBox.pack_forget()
             self.varBox.pack(anchor="w", pady=(2,0))
             if self.varData:
                 mean_var = np.mean(self.varData['total_variance'])
@@ -633,6 +779,30 @@ class App(tk.Tk):
                     self.txt.insert(tk.END, txt)
                 self.txt.config(state=tk.DISABLED)
             self._updVariancePlot()
+        elif tabTxt == "Model Training":
+            self.tab = "training"
+            self.cbox.pack_forget()
+            self.rbox.pack_forget()
+            self.gateBox.pack_forget()
+            self.regexBox.pack_forget()
+            self.overlapBox.pack_forget()
+            self.varBox.pack_forget()
+            self.trainBox.pack(anchor="w", pady=(2,0))
+            self.txt.config(state=tk.NORMAL)
+            self.txt.delete(1.0, tk.END)
+            if self.modelTrainingAvailable:
+                self.txt.insert(tk.END, "Model Training\n")
+                self.txt.insert(tk.END, "=" * 40 + "\n")
+                self.txt.insert(tk.END, "Train neural networks to predict water content\n")
+                self.txt.insert(tk.END, "from S-parameter measurements.\n\n")
+                self.txt.insert(tk.END, "Data directories: " + str(len(self.trainDataDirs)) + "\n")
+                if self.torch and self.torch.cuda.is_available():
+                    self.txt.insert(tk.END, "CUDA available: Yes\n")
+                else:
+                    self.txt.insert(tk.END, "CUDA available: No\n")
+            else:
+                self.txt.insert(tk.END, "Model training module not available\n")
+            self.txt.config(state=tk.DISABLED)
 
     def _addFiles(self):
         pth = filedialog.askopenfilenames(
@@ -717,7 +887,6 @@ class App(tk.Tk):
         legF = []
         legTR = []
         legTG = []
-        # freq domain raw
         for v, p, d in self.fls:
             if not v.get(): continue
             ext = Path(p).suffix.lower()
@@ -745,7 +914,6 @@ class App(tk.Tk):
         else:
             axF.text(0.5, 0.5, "Brak danych", ha="center", va="center", color="gray")
             axF.set_xticks([]); axF.set_yticks([])
-        # time domain raw
         for v, p, d in self.fls:
             if not v.get(): continue
             ext = Path(p).suffix.lower()
@@ -769,7 +937,6 @@ class App(tk.Tk):
             axTR.text(0.5, 0.5, "Brak danych / Placeholder", ha="center", va="center", color="gray", transform=axTR.transAxes)
             axTR.set_xticks(np.linspace(0, 30, 7))
             axTR.set_yticks([])
-        # freq domain gated
         if doGate:
             for v, p, d in self.fls:
                 if not v.get(): continue
@@ -780,7 +947,6 @@ class App(tk.Tk):
                         ntw = loadFile(p)
                         sRaw = getattr(ntw, prm)
                         sGate = sRaw.time_gate(center=center, span=span)
-                        # wróć do freq domain gated
                         freq = ntw.f
                         arr = sGate.s_db.flatten()
                         axTG.plot(freq, arr, label=lbl)
@@ -987,7 +1153,7 @@ class App(tk.Tk):
             for line in file:
                 match = re.match(r"^\s*(\d+\.?\d*)\s+(\d+\.?\d*)", line)
                 if match:
-                    start = float(match.group(1)) / 1e9  
+                    start = float(match.group(1)) / 1e9
                     end = float(match.group(2)) / 1e9
                     ranges.append((start, end))
         return ranges
@@ -1014,7 +1180,7 @@ class App(tk.Tk):
             return
             
         key = f"regex_{self.regexParam.get()}"
-        self.overlapData[key] = [(s/1e9, e/1e9) for s, e in self.regexRanges]  # Convert to GHz
+        self.overlapData[key] = [(s/1e9, e/1e9) for s, e in self.regexRanges]
         self._updOverlapPlot()
 
     def _findOverlaps(self, r1, r2):
@@ -1129,23 +1295,19 @@ class App(tk.Tk):
 
     def _normalizeForVariance(self, data, is_phase=False):
         if is_phase and self.varDetrend.get():
-            
             n_samples, n_frequencies = data.shape
             detrended = np.zeros_like(data)
             
             for i in range(n_samples):
-                
                 x = np.arange(n_frequencies)
                 coeffs = np.polyfit(x, data[i], 1)
                 trend = np.polyval(coeffs, x)
                 detrended[i] = data[i] - trend
             
-            
             mean = np.mean(detrended)
             std = np.std(detrended) + 1e-10
             return (detrended - mean) / std
         else:
-            
             mean = np.mean(data)
             std = np.std(data) + 1e-10
             return (data - mean) / std
@@ -1156,7 +1318,7 @@ class App(tk.Tk):
         sstr = f"{fmin}-{fmax}ghz"
         
         param_list = []
-        component_types = []  
+        component_types = []
         
         if self.varS11.get():
             if self.varMag.get():
@@ -1190,7 +1352,6 @@ class App(tk.Tk):
         if not param_list:
             return None
         
-       
         raw_data_by_param = {param: [] for param in param_list}
         file_count = 0
         freq_ref = None
@@ -1210,7 +1371,6 @@ class App(tk.Tk):
                 elif len(ntw.f) != len(freq_ref) or not np.allclose(ntw.f, freq_ref, rtol=1e-6):
                     continue
                 
-                
                 for sparam in ['s11', 's12', 's21', 's22']:
                     if any(sparam in p for p in param_list):
                         s_data = getattr(ntw, sparam)
@@ -1220,7 +1380,6 @@ class App(tk.Tk):
                         
                         if f'{sparam}_phase' in param_list:
                             phase_rad = np.angle(s_data.s.flatten())
-                            
                             phase_deg = np.degrees(phase_rad)
                             if np.any(np.abs(np.diff(phase_deg)) > 180):
                                 phase_unwrapped_rad = np.unwrap(phase_rad)
@@ -1238,21 +1397,16 @@ class App(tk.Tk):
         n_frequencies = len(freq_ref)
         n_params = len(param_list)
         
-        
         normalized_data = np.zeros((file_count, n_frequencies, n_params))
         
         for i, (param, comp_type) in enumerate(zip(param_list, component_types)):
-            
             param_data = np.array(raw_data_by_param[param])
-            
             
             normalized = self._normalizeForVariance(param_data, is_phase=(comp_type == 'phase'))
             normalized_data[:, :, i] = normalized
         
-        
         variance_by_param = np.var(normalized_data, axis=0, ddof=1)
         total_variance = np.sum(variance_by_param, axis=1)
-        
         
         variance_contribution = np.zeros_like(variance_by_param)
         for freq_idx in range(n_frequencies):
@@ -1260,10 +1414,8 @@ class App(tk.Tk):
                 variance_contribution[freq_idx] = (variance_by_param[freq_idx] / 
                                                  total_variance[freq_idx]) * 100
         
-        
         mean_by_param = np.mean(normalized_data, axis=0)
         std_by_param = np.std(normalized_data, axis=0, ddof=1)
-        
         
         if self.varDetrend.get():
             norm_info = 'Phase: detrended+z-score, Magnitude: z-score'
@@ -1304,7 +1456,6 @@ class App(tk.Tk):
         
         param_labels = []
         for param in self.varData['param_list']:
-            # param is already like 's11_mag' or 's11_phase'
             parts = param.split('_')
             s_param = parts[0].upper()
             comp_type = parts[1].capitalize()
@@ -1314,7 +1465,6 @@ class App(tk.Tk):
         for i in range(n_params):
             y[i] = var_contrib[:, i]
         
-        
         if n_params <= 8:
             colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', 
                      '#9467bd', '#8c564b', '#e377c2', '#7f7f7f'][:n_params]
@@ -1323,7 +1473,6 @@ class App(tk.Tk):
         
         self.axV.stackplot(freqs, y, labels=param_labels[:n_params], 
                           colors=colors, alpha=0.8)
-        
         
         mean_var = np.mean(self.varData['total_variance'])
         std_var = np.std(self.varData['total_variance'])
@@ -1338,15 +1487,13 @@ class App(tk.Tk):
         self.axV.set_ylabel('Variance Contribution (%)')
         self.axV.set_title(f'Normalized Variance Contribution by Component ({self.varData["file_count"]} files)')
         self.axV.grid(True, alpha=0.3)
-        self.axV.set_ylim(0, 105)  
+        self.axV.set_ylim(0, 105)
         
         if n_params <= 8:
             self.axV.legend(loc='upper right', fontsize=9)
         
-        
         self.varFreqs = freqs
         self.varTotalVar = self.varData['total_variance']
-        
         
         mean_var = np.mean(self.varData['total_variance'])
         std_var = np.std(self.varData['total_variance'])
@@ -1362,8 +1509,7 @@ class App(tk.Tk):
             self.txt.insert(tk.END, txt)
         self.txt.config(state=tk.DISABLED)
         
-        
-        self.figV.tight_layout(rect=[0, 0, 1, 0.95])  # Leave space at top
+        self.figV.tight_layout(rect=[0, 0, 1, 0.95])
         self.cvV.draw()
 
     def _onMotionVar(self, event):
@@ -1412,15 +1558,13 @@ class App(tk.Tk):
         freq = self.varFreqs[idx]
         var = self.varTotalVar[idx]
         
-        
-        y_pos = 97  # Fixed position at 95%
+        y_pos = 95
         
         m, = self.axV.plot([freq], [y_pos], 'ro', markersize=10, picker=7)
         
-        
         t = self.axV.annotate(
             f"{freq/1e6:.3f} MHz\nVar: {var:.4f}",
-            xy=(freq, y_pos), xytext=(10, -30),  
+            xy=(freq, y_pos), xytext=(10, -30),
             textcoords="offset points",
             bbox=dict(boxstyle="round,pad=0.2", fc="yellow", alpha=0.8),
             arrowprops=dict(arrowstyle="->", color='red', lw=1.5),
@@ -1430,10 +1574,8 @@ class App(tk.Tk):
         
         self.varMrk.append({'marker': m, 'text': t})
         
-        
         txt = f"Variance marker: {freq/1e6:.3f} MHz\n"
         txt += f"  Total variance: {var:.4f}\n"
-        
         
         param_labels = []
         for param in self.varData['param_list']:
@@ -1524,6 +1666,344 @@ class App(tk.Tk):
                 f.write("\n")
         
         messagebox.showinfo("Export complete", f"Variance data saved to {filename}")
+
+    def _addTrainDir(self):
+        if not self.modelTrainingAvailable:
+            return
+        
+        directory = filedialog.askdirectory(title="Select directory containing .s2p files")
+        if directory and directory not in self.trainDataDirs:
+            self.trainDataDirs.append(directory)
+            self.trainDirListbox.insert(tk.END, directory)
+            
+    def _removeTrainDir(self):
+        if not self.modelTrainingAvailable:
+            return
+            
+        selection = self.trainDirListbox.curselection()
+        if selection:
+            idx = selection[0]
+            self.trainDirListbox.delete(idx)
+            del self.trainDataDirs[idx]
+            
+    def _clearTrainDirs(self):
+        if not self.modelTrainingAvailable:
+            return
+            
+        self.trainDataDirs.clear()
+        self.trainDirListbox.delete(0, tk.END)
+        
+    def _runCrossValidation(self):
+        if not self.modelTrainingAvailable:
+            return
+            
+        if not self.trainDataDirs:
+            messagebox.showwarning("No data", "Please add training data directories first")
+            return
+            
+        thread = threading.Thread(target=self._runCrossValidationThread)
+        thread.daemon = True
+        thread.start()
+        
+    def _runCrossValidationThread(self):
+        self.after(0, self.trainProgress.start, 10)
+        
+        def update_text():
+            self.txt.config(state=tk.NORMAL)
+            self.txt.delete(1.0, tk.END)
+            self.txt.insert(tk.END, "Running cross-validation...\n")
+            self.txt.insert(tk.END, "This may take several minutes.\n\n")
+            self.txt.config(state=tk.DISABLED)
+        self.after(0, update_text)
+        
+        try:
+            device = self.trainDevice.get()
+            if device == "cuda" and self.torch and not self.torch.cuda.is_available():
+                device = "cpu"
+                def warn_cuda():
+                    self.txt.config(state=tk.NORMAL)
+                    self.txt.insert(tk.END, "WARNING: CUDA not available, using CPU instead.\n\n")
+                    self.txt.config(state=tk.DISABLED)
+                self.after(0, warn_cuda)
+            
+            import io
+            import sys
+            old_stdout = sys.stdout
+            sys.stdout = io.StringIO()
+            
+            fold_results, avg_mae, std_mae = self.water_pred.cross_validate_water_predictor(
+                data_dirs=self.trainDataDirs,
+                device=device,
+                hidden_dim=self.trainHiddenDim.get(),
+                latent_dim=self.trainLatentDim.get(),
+                dropout=self.trainDropout.get(),
+                lr=self.trainLR.get(),
+                weight_decay=self.trainWeightDecay.get(),
+                loss_fn=self.trainLossFn.get(),
+                augment=self.trainAugment.get(),
+                noise_std=self.trainNoise.get(),
+                use_batchnorm=self.trainBatchNorm.get(),
+                epochs=self.trainEpochs.get(),
+                patience=self.trainPatience.get()
+            )
+            
+            sys.stdout = old_stdout
+            
+            def update_results():
+                self._plotCrossValidationResults(fold_results, avg_mae, std_mae)
+                
+                self.txt.config(state=tk.NORMAL)
+                self.txt.insert(tk.END, f"\nCross-validation complete!\n")
+                self.txt.insert(tk.END, f"Average MAE: {avg_mae:.2f} ± {std_mae:.2f} ml\n")
+                self.txt.insert(tk.END, "\nFold results:\n")
+                for i, result in enumerate(fold_results):
+                    self.txt.insert(tk.END, f"  Fold {i+1}: MAE = {result['val_mae']:.2f} ml\n")
+                self.txt.config(state=tk.DISABLED)
+                
+            self.after(0, update_results)
+            
+        except Exception as e:
+            error_msg = str(e)
+            if "expected more than 1 value per channel" in error_msg:
+                error_msg = "Not enough data for cross-validation with batch normalization.\nTry disabling batch norm or adding more training data."
+            self.after(0, messagebox.showerror, "Error", f"Cross-validation failed:\n{error_msg}")
+            
+        finally:
+            self.after(0, self.trainProgress.stop)
+            
+    def _trainFinalModel(self):
+        if not self.modelTrainingAvailable:
+            return
+            
+        if not self.trainDataDirs:
+            messagebox.showwarning("No data", "Please add training data directories first")
+            return
+            
+        save_path = filedialog.asksaveasfilename(
+            title="Save model as",
+            defaultextension=".pth",
+            filetypes=[("PyTorch model", "*.pth"), ("All files", "*.*")]
+        )
+        
+        if not save_path:
+            return
+            
+        thread = threading.Thread(target=self._trainFinalModelThread, args=(save_path,))
+        thread.daemon = True
+        thread.start()
+        
+    def _trainFinalModelThread(self, save_path):
+        self.after(0, self.trainProgress.start, 10)
+        
+        def update_text():
+            self.txt.config(state=tk.NORMAL)
+            self.txt.delete(1.0, tk.END)
+            self.txt.insert(tk.END, "Training final model...\n")
+            self.txt.insert(tk.END, "This may take several minutes.\n\n")
+            self.txt.config(state=tk.DISABLED)
+        self.after(0, update_text)
+        
+        try:
+            device = self.trainDevice.get()
+            if device == "cuda" and self.torch and not self.torch.cuda.is_available():
+                device = "cpu"
+                def warn_cuda():
+                    self.txt.config(state=tk.NORMAL)
+                    self.txt.insert(tk.END, "WARNING: CUDA not available, using CPU instead.\n\n")
+                    self.txt.config(state=tk.DISABLED)
+                self.after(0, warn_cuda)
+            
+            import io
+            import sys
+            old_stdout = sys.stdout
+            sys.stdout = io.StringIO()
+            
+            model, dataset = self.water_pred.train_final_model(
+                data_dirs=self.trainDataDirs,
+                model_save_path=save_path,
+                device=device,
+                hidden_dim=self.trainHiddenDim.get(),
+                latent_dim=self.trainLatentDim.get(),
+                dropout=self.trainDropout.get(),
+                lr=self.trainLR.get(),
+                weight_decay=self.trainWeightDecay.get(),
+                loss_fn=self.trainLossFn.get(),
+                augment=self.trainAugment.get(),
+                noise_std=self.trainNoise.get(),
+                use_batchnorm=self.trainBatchNorm.get(),
+                epochs=self.trainEpochs.get(),
+                patience=self.trainPatience.get()
+            )
+            
+            sys.stdout = old_stdout
+            
+            def update_results():
+                self.txt.config(state=tk.NORMAL)
+                self.txt.insert(tk.END, f"\nModel training complete!\n")
+                self.txt.insert(tk.END, f"Model saved to: {save_path}\n")
+                self.txt.config(state=tk.DISABLED)
+                
+                messagebox.showinfo("Success", f"Model trained and saved to:\n{save_path}")
+                
+            self.after(0, update_results)
+            
+        except Exception as e:
+            self.after(0, messagebox.showerror, "Error", f"Model training failed:\n{str(e)}")
+            
+        finally:
+            self.after(0, self.trainProgress.stop)
+            
+    def _loadModel(self):
+        if not self.modelTrainingAvailable:
+            return
+            
+        filepath = filedialog.askopenfilename(
+            title="Select model file",
+            filetypes=[("PyTorch model", "*.pth"), ("All files", "*.*")]
+        )
+        
+        if not filepath:
+            return
+            
+        try:
+            checkpoint = self.torch.load(filepath, map_location=self.trainDevice.get())
+            
+            self.txt.config(state=tk.NORMAL)
+            self.txt.delete(1.0, tk.END)
+            self.txt.insert(tk.END, f"Model loaded: {os.path.basename(filepath)}\n")
+            self.txt.insert(tk.END, "=" * 40 + "\n")
+            
+            if 'model_config' in checkpoint:
+                config = checkpoint['model_config']
+                self.txt.insert(tk.END, "Model configuration:\n")
+                for key, value in config.items():
+                    self.txt.insert(tk.END, f"  {key}: {value}\n")
+                    
+            self.txt.insert(tk.END, "\nModel ready for inference.\n")
+            self.txt.config(state=tk.DISABLED)
+            
+            messagebox.showinfo("Success", "Model loaded successfully")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load model:\n{str(e)}")
+            
+    def _plotCrossValidationResults(self, fold_results, avg_mae, std_mae):
+        if not self.modelTrainingAvailable:
+            return
+            
+        self.axM1.clear()
+        self.axM2.clear()
+        
+        all_predictions = np.concatenate([r['predictions'] for r in fold_results])
+        all_targets = np.concatenate([r['targets'] for r in fold_results])
+        
+        self.axM1.scatter(all_targets, all_predictions, alpha=0.6)
+        self.axM1.plot([min(all_targets), max(all_targets)], 
+                       [min(all_targets), max(all_targets)], 'r--')
+        self.axM1.set_xlabel('True Water Volume (ml)')
+        self.axM1.set_ylabel('Predicted Water Volume (ml)')
+        self.axM1.set_title(f'Water Volume Prediction\nMAE: {avg_mae:.1f}±{std_mae:.1f} ml')
+        self.axM1.grid(True, alpha=0.3)
+        
+        mae_per_fold = [r['val_mae'] for r in fold_results]
+        folds = list(range(1, len(mae_per_fold) + 1))
+        self.axM2.bar(folds, mae_per_fold)
+        self.axM2.set_xlabel('Fold')
+        self.axM2.set_ylabel('MAE (ml)')
+        self.axM2.set_title('MAE by Fold')
+        self.axM2.grid(True, alpha=0.3)
+        
+        self.axM2.axhline(y=avg_mae, color='r', linestyle='--', 
+                          label=f'Average: {avg_mae:.1f} ml')
+        self.axM2.legend()
+        
+        self.figM.tight_layout()
+        self.cvM.draw()
+        
+    def _scanTrainingFiles(self):
+        if not self.modelTrainingAvailable:
+            return
+            
+        if not self.trainDataDirs:
+            messagebox.showwarning("No data", "Please add training data directories first")
+            return
+            
+        self.txt.config(state=tk.NORMAL)
+        self.txt.delete(1.0, tk.END)
+        self.txt.insert(tk.END, "Scanning training files...\n")
+        self.txt.insert(tk.END, "=" * 40 + "\n\n")
+        
+        total_files = 0
+        valid_files = 0
+        water_volumes = set()
+        distances = set()
+        combinations_count = {}
+        
+        for data_dir in self.trainDataDirs:
+            self.txt.insert(tk.END, f"Directory: {data_dir}\n")
+            
+            s2p_files = []
+            for root, dirs, files in os.walk(data_dir):
+                for file in files:
+                    if file.lower().endswith('.s2p'):
+                        s2p_files.append(os.path.join(root, file))
+            
+            self.txt.insert(tk.END, f"  Found {len(s2p_files)} .s2p files\n")
+            total_files += len(s2p_files)
+            
+            dir_valid = 0
+            for filepath in s2p_files:
+                filename = os.path.basename(filepath)
+                try:
+                    water_match = re.search(r'(\d+)ml', filename.lower())
+                    dist_mm_match = re.search(r'(\d+)mm', filename.lower())
+                    dist_cm_match = re.search(r'(\d+)cm', filename.lower())
+                    
+                    if water_match and (dist_mm_match or dist_cm_match):
+                        water_ml = float(water_match.group(1))
+                        if dist_mm_match:
+                            distance_mm = float(dist_mm_match.group(1))
+                        else:
+                            distance_cm = float(dist_cm_match.group(1))
+                            distance_mm = distance_cm * 10.0
+                        
+                        water_volumes.add(water_ml)
+                        distances.add(distance_mm)
+                        dir_valid += 1
+                        
+                        combo_key = (water_ml, distance_mm)
+                        combinations_count[combo_key] = combinations_count.get(combo_key, 0) + 1
+                        
+                except Exception:
+                    pass
+            
+            self.txt.insert(tk.END, f"  Valid files: {dir_valid}\n\n")
+            valid_files += dir_valid
+        
+        self.txt.insert(tk.END, "Summary:\n")
+        self.txt.insert(tk.END, f"  Total .s2p files: {total_files}\n")
+        self.txt.insert(tk.END, f"  Valid training files: {valid_files}\n")
+        self.txt.insert(tk.END, f"  Unique water volumes: {len(water_volumes)}\n")
+        self.txt.insert(tk.END, f"    Values (ml): {sorted(water_volumes)}\n")
+        self.txt.insert(tk.END, f"  Unique distances: {len(distances)}\n")
+        self.txt.insert(tk.END, f"    Values (mm): {sorted(distances)}\n")
+        self.txt.insert(tk.END, f"    Values (cm): {[d/10 for d in sorted(distances)]}\n")
+        self.txt.insert(tk.END, f"  Unique combinations: {len(combinations_count)}\n\n")
+        
+        if combinations_count:
+            self.txt.insert(tk.END, "Data distribution:\n")
+            for (water, dist), count in sorted(combinations_count.items()):
+                self.txt.insert(tk.END, f"  {water}ml @ {dist}mm ({dist/10}cm): {count} files\n")
+        
+        if valid_files == 0:
+            self.txt.insert(tk.END, "\nWARNING: No valid training files found!\n")
+            self.txt.insert(tk.END, "Files must have format: ..._XXml_..._YYmm... or ..._XXml_..._YYcm...\n")
+            self.txt.insert(tk.END, "where XX is water volume in ml and YY is distance in mm or cm\n")
+        elif valid_files < 10:
+            self.txt.insert(tk.END, f"\nWARNING: Only {valid_files} training files found.\n")
+            self.txt.insert(tk.END, "Consider adding more data for better model performance.\n")
+        
+        self.txt.config(state=tk.DISABLED)
 
 if __name__ == "__main__":
     App().mainloop()
