@@ -31,6 +31,24 @@ def loadFile(p):
     t.close()
     return rf.Network(t.name)
 
+class ValidatedDoubleVar(tk.DoubleVar):
+    """DoubleVar with validation and fallback to previous valid value"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._last_valid = self.get()
+    
+    def set(self, value):
+        try:
+            if isinstance(value, str):
+                value = value.replace(',', '.')
+            float_val = float(value)
+            super().set(float_val)
+            self._last_valid = float_val
+        except (ValueError, TypeError):
+            super().set(self._last_valid)
+            return False
+        return True
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -39,8 +57,8 @@ class App(tk.Tk):
         self.fls = []
         self.mrk = []
         self.mtxt = []
-        self.fmin = tk.DoubleVar(value=MINF)
-        self.fmax = tk.DoubleVar(value=MAXF)
+        self.fmin = ValidatedDoubleVar(value=MINF)
+        self.fmax = ValidatedDoubleVar(value=MAXF)
         self.s11 = tk.BooleanVar(value=False)
         self.s22 = tk.BooleanVar(value=False)
         self.s12 = tk.BooleanVar(value=False)
@@ -52,29 +70,29 @@ class App(tk.Tk):
         self.tax = []
         self.tab = "freq"
         self.gateChk = tk.BooleanVar(value=False)
-        self.gateCenter = tk.DoubleVar(value=5.0)
-        self.gateSpan = tk.DoubleVar(value=0.5)
+        self.gateCenter = ValidatedDoubleVar(value=5.0)
+        self.gateSpan = ValidatedDoubleVar(value=0.5)
         
         self.regexPattern = tk.StringVar(value=r'_(\d+)ml')
         self.regexParam = tk.StringVar(value="s21")
         self.regexHighlightChk = tk.BooleanVar(value=True)
+        self.regexStrictMonotonic = tk.BooleanVar(value=False)  # Strict monotonicity
         self.regexGateChk = tk.BooleanVar(value=False)
         self.regexGroup = tk.IntVar(value=1)
         self.regexSpans = []
         self.regexLines = []
         self.regexRanges = []
         
-
         self.overlapData = {}
         self.fileListCanvas = None
         
-
         self.varS11 = tk.BooleanVar(value=True)
         self.varS22 = tk.BooleanVar(value=False)
         self.varS12 = tk.BooleanVar(value=False)
         self.varS21 = tk.BooleanVar(value=True)
         self.varMag = tk.BooleanVar(value=True)
         self.varPhase = tk.BooleanVar(value=True)
+        self.varDetrend = tk.BooleanVar(value=True)  # Default to detrending
         self.varData = None
         self.varMrk = []
         self.varMtxt = []
@@ -82,6 +100,20 @@ class App(tk.Tk):
         
         self._makeUi()
         self._updAll()
+
+    def _validateNumeric(self, widget, var, callback=None):
+        """Add validation to numeric entry widget"""
+        def validate_and_update(*args):
+            val = widget.get()
+            if var.set(val):
+                if callback:
+                    callback()
+            else:
+                widget.delete(0, tk.END)
+                widget.insert(0, str(var.get()))
+                
+        widget.bind("<FocusOut>", validate_and_update)
+        widget.bind("<Return>", validate_and_update)
 
     def _makeUi(self):
         lfrm = ttk.Frame(self)
@@ -92,11 +124,11 @@ class App(tk.Tk):
         ttk.Label(ffrm, text="Od").pack(side=tk.LEFT, padx=(5,0))
         ent1 = ttk.Entry(ffrm, textvariable=self.fmin, width=6)
         ent1.pack(side=tk.LEFT, padx=(2,10))
-        ent1.bind("<Return>", lambda e: self._updAll())
+        self._validateNumeric(ent1, self.fmin, self._updAll)
         ttk.Label(ffrm, text="Do").pack(side=tk.LEFT)
         ent2 = ttk.Entry(ffrm, textvariable=self.fmax, width=6)
         ent2.pack(side=tk.LEFT, padx=(2,10))
-        ent2.bind("<Return>", lambda e: self._updAll())
+        self._validateNumeric(ent2, self.fmax, self._updAll)
         btn1 = ttk.Button(lfrm, text="Dodaj pliki", command=self._addFiles)
         btn1.pack(anchor="w", pady=(0,10))
         btn2 = ttk.Button(lfrm, text="Usuń wszystkie markery", command=self._clearM)
@@ -104,7 +136,6 @@ class App(tk.Tk):
         btn3 = ttk.Button(lfrm, text="Usuń zaznaczone pliki", command=self._deleteSelectedFiles)
         btn3.pack(anchor="w", pady=(0,10))
         
-
         fileListFrame = ttk.Frame(lfrm)
         fileListFrame.pack(anchor="w", fill=tk.BOTH, pady=(0,10))
         
@@ -126,7 +157,6 @@ class App(tk.Tk):
         
         self.fbox.bind("<Configure>", updateScrollRegion)
         
-
         def onMouseWheel(event):
             fileListCanvas.yview_scroll(int(-1*(event.delta/120)), "units")
         
@@ -158,33 +188,29 @@ class App(tk.Tk):
         ttk.Label(self.gateBox, text="Center [ns]").pack(side=tk.LEFT, padx=2)
         self.gateCenterEntry = ttk.Entry(self.gateBox, textvariable=self.gateCenter, width=5)
         self.gateCenterEntry.pack(side=tk.LEFT, padx=3)
-        self.gateCenterEntry.bind("<Return>", lambda e: self._updAll())
+        self._validateNumeric(self.gateCenterEntry, self.gateCenter, self._updAll)
         ttk.Label(self.gateBox, text="Span [ns]").pack(side=tk.LEFT, padx=2)
         self.gateSpanEntry = ttk.Entry(self.gateBox, textvariable=self.gateSpan, width=5)
         self.gateSpanEntry.pack(side=tk.LEFT, padx=3)
-        self.gateSpanEntry.bind("<Return>", lambda e: self._updAll())
+        self._validateNumeric(self.gateSpanEntry, self.gateSpan, self._updAll)
         self.cbox.pack(anchor="w", pady=(2,0))
         self.openGatedBtn = ttk.Button(self.gateBox, text="Otwórz gated (freq) w Matplotlib", command=self._showGatedPlot)
         self.openGatedBtn.pack(side=tk.LEFT, padx=8)
         
-
         self.regexBox = ttk.Frame(lfrm)
         
-
         ttk.Label(self.regexBox, text="Regex pattern:").pack(anchor="w")
         self.regexEntry = ttk.Entry(self.regexBox, textvariable=self.regexPattern, width=40)
         self.regexEntry.pack(anchor="w", pady=(2,5))
         self.regexEntry.bind("<Return>", lambda e: self._updRegexPlot())
         self.regexEntry.bind("<KeyRelease>", self._onRegexChange)
         
-
         helpFrame = ttk.Frame(self.regexBox)
         helpFrame.pack(anchor="w", pady=(0,5))
         helpText = ttk.Label(helpFrame, text="Pattern must have capture group (...) with number", 
                             font=("", 8), foreground="gray")
         helpText.pack(anchor="w")
         
-
         groupFrame = ttk.Frame(self.regexBox)
         groupFrame.pack(anchor="w", pady=(0,5))
         ttk.Label(groupFrame, text="Capture group:").pack(side=tk.LEFT)
@@ -194,7 +220,6 @@ class App(tk.Tk):
         self.groupSpin.pack(side=tk.LEFT, padx=(5,0))
         ttk.Label(groupFrame, text="(which group has the number)", font=("", 8)).pack(side=tk.LEFT, padx=(5,0))
         
-
         sparamFrame = ttk.Frame(self.regexBox)
         sparamFrame.pack(anchor="w", pady=(5,0))
         ttk.Label(sparamFrame, text="S-param:").pack(side=tk.LEFT)
@@ -206,26 +231,34 @@ class App(tk.Tk):
         regexCtrlFrame.pack(anchor="w", pady=(5,0))
         self.regexHighlightCheckBtn = ttk.Checkbutton(regexCtrlFrame, text="Highlight monotonic", variable=self.regexHighlightChk, command=self._updRegexPlot)
         self.regexHighlightCheckBtn.pack(side=tk.LEFT, padx=3)
+        self.regexStrictCheckBtn = ttk.Checkbutton(regexCtrlFrame, text="Strict monotonic", variable=self.regexStrictMonotonic, command=self._updRegexPlot)
+        self.regexStrictCheckBtn.pack(side=tk.LEFT, padx=3)
         self.exportRangesBtn = ttk.Button(regexCtrlFrame, text="Export ranges", command=self._exportRanges)
         self.exportRangesBtn.pack(side=tk.LEFT, padx=3)
         
+        # Add help text for strict monotonic
+        strictHelpFrame = ttk.Frame(self.regexBox)
+        strictHelpFrame.pack(anchor="w", pady=(2,0))
+        ttk.Label(strictHelpFrame, text="Strict: no equal consecutive values; Non-strict: allows equal values", 
+                 font=("", 8), foreground="gray").pack(anchor="w")
+        
         # Gating controls for regex
         gatingFrame = ttk.Frame(self.regexBox)
-        gatingFrame.pack(anchor="w", pady=(5,0))
+        gatingFrame.pack(anchor="w", pady=(3,0))
         self.regexGateChk = tk.BooleanVar(value=False)
         self.regexGateCheck = ttk.Checkbutton(gatingFrame, text="Apply gating", variable=self.regexGateChk, command=self._updRegexPlot)
         self.regexGateCheck.pack(side=tk.LEFT, padx=3)
         ttk.Label(gatingFrame, text="Center [ns]").pack(side=tk.LEFT, padx=(10,2))
         self.regexGateCenterEntry = ttk.Entry(gatingFrame, textvariable=self.gateCenter, width=5)
         self.regexGateCenterEntry.pack(side=tk.LEFT, padx=3)
-        self.regexGateCenterEntry.bind("<Return>", lambda e: self._updRegexPlot())
+        self._validateNumeric(self.regexGateCenterEntry, self.gateCenter, self._updRegexPlot)
         ttk.Label(gatingFrame, text="Span [ns]").pack(side=tk.LEFT, padx=(5,2))
         self.regexGateSpanEntry = ttk.Entry(gatingFrame, textvariable=self.gateSpan, width=5)
         self.regexGateSpanEntry.pack(side=tk.LEFT, padx=3)
-        self.regexGateSpanEntry.bind("<Return>", lambda e: self._updRegexPlot())
+        self._validateNumeric(self.regexGateSpanEntry, self.gateSpan, self._updRegexPlot)
         
         patternFrame = ttk.Frame(self.regexBox)
-        patternFrame.pack(anchor="w", pady=(5,0))
+        patternFrame.pack(anchor="w", pady=(3,0))
         ttk.Label(patternFrame, text="Quick patterns:").pack(anchor="w")
         
         patterns1 = ttk.Frame(patternFrame)
@@ -240,9 +273,8 @@ class App(tk.Tk):
         ttk.Button(patterns2, text="sample_XX", command=lambda: self._setRegex(r'sample_(\d+)')).pack(side=tk.LEFT, padx=2)
         ttk.Button(patterns2, text="XX.YYml", command=lambda: self._setRegex(r'(\d+\.?\d*)ml')).pack(side=tk.LEFT, padx=2)
         
-
         advFrame = ttk.Frame(self.regexBox)
-        advFrame.pack(anchor="w", pady=(5,0))
+        advFrame.pack(anchor="w", pady=(3,0))
         ttk.Label(advFrame, text="Advanced examples:", font=("", 9, "bold")).pack(anchor="w")
         exampleText = tk.Text(advFrame, height=4, width=40, font=("Consolas", 8))
         exampleText.pack(anchor="w", pady=(2,0))
@@ -252,7 +284,6 @@ class App(tk.Tk):
         exampleText.insert(tk.END, r"[^0-9]*(\d+)[^0-9]*$     # last number")
         exampleText.config(state=tk.DISABLED)
         
-
         self.overlapBox = ttk.Frame(lfrm)
         ttk.Label(self.overlapBox, text="Select frequency range files:").pack(anchor="w", pady=(5,0))
         btnFrame = ttk.Frame(self.overlapBox)
@@ -262,7 +293,6 @@ class App(tk.Tk):
         ttk.Button(btnFrame, text="Export overlaps", command=self._exportOverlaps).pack(side=tk.LEFT, padx=(0,5))
         ttk.Button(btnFrame, text="Clear plot", command=self._clearOverlapPlot).pack(side=tk.LEFT)
         
-
         self.varBox = ttk.Frame(lfrm)
         ttk.Label(self.varBox, text="S-parameters to analyze:").pack(anchor="w", pady=(5,0))
         sparamFrame = ttk.Frame(self.varBox)
@@ -277,6 +307,12 @@ class App(tk.Tk):
         compFrame.pack(anchor="w", pady=(2,0))
         ttk.Checkbutton(compFrame, text="Magnitude", variable=self.varMag, command=self._updVariancePlot).pack(side=tk.LEFT, padx=2)
         ttk.Checkbutton(compFrame, text="Phase", variable=self.varPhase, command=self._updVariancePlot).pack(side=tk.LEFT, padx=2)
+        
+        ttk.Label(self.varBox, text="Phase processing:").pack(anchor="w", pady=(5,0))
+        phaseFrame = ttk.Frame(self.varBox)
+        phaseFrame.pack(anchor="w", pady=(2,0))
+        ttk.Checkbutton(phaseFrame, text="Remove linear trend", variable=self.varDetrend, command=self._updVariancePlot).pack(side=tk.LEFT, padx=2)
+        ttk.Label(phaseFrame, text="(removes cable delay effects)", font=("", 8), foreground="gray").pack(side=tk.LEFT, padx=(5,0))
         
         btnFrame2 = ttk.Frame(self.varBox)
         btnFrame2.pack(anchor="w", pady=(5,0))
@@ -305,7 +341,6 @@ class App(tk.Tk):
         self.tbT.update()
         self.tbT.pack(fill=tk.X)
         
-
         frmR = ttk.Frame(nb)
         nb.add(frmR, text="Regex Highlighting")
         self.figR, self.axR = plt.subplots(figsize=(10,7))
@@ -315,7 +350,6 @@ class App(tk.Tk):
         self.tbR.update()
         self.tbR.pack(fill=tk.X)
         
-
         frmO = ttk.Frame(nb)
         nb.add(frmO, text="Range Overlaps")
         self.figO, self.axO = plt.subplots(figsize=(10,7))
@@ -325,10 +359,10 @@ class App(tk.Tk):
         self.tbO.update()
         self.tbO.pack(fill=tk.X)
         
-
         frmV = ttk.Frame(nb)
         nb.add(frmV, text="Variance Analysis")
-        self.figV, self.axV = plt.subplots(figsize=(10,7))
+        # Increase figure size and add more padding
+        self.figV, self.axV = plt.subplots(figsize=(10,8))
         self.cvV = FigureCanvasTkAgg(self.figV, master=frmV)
         self.cvV.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         self.tbV = NavigationToolbar2Tk(self.cvV, frmV)
@@ -340,7 +374,6 @@ class App(tk.Tk):
         self.cv.mpl_connect('pick_event', self._onPick)
         self.cvT.mpl_connect('pick_event', self._onPick)
         
-
         self.cvV.mpl_connect('button_press_event', self._onClickVar)
         self.cvV.mpl_connect('pick_event', self._onPickVar)
         self.cvV.mpl_connect('motion_notify_event', self._onMotionVar)
@@ -356,14 +389,12 @@ class App(tk.Tk):
                 group_idx = self.regexGroup.get()
                 if group_idx <= len(match.groups()):
                     value_str = match.group(group_idx)
-
                     return float(value_str)
         except:
             pass
         return None
 
     def _onRegexChange(self, event=None):
-
         pattern = self.regexPattern.get()
         try:
             re.compile(pattern)
@@ -375,20 +406,27 @@ class App(tk.Tk):
         if not files_data:
             return [], None, None, []
             
-
         files_data.sort(key=lambda x: x[1])
         labels = [d[0] for d in files_data]
         freqs = files_data[0][2]
         s_matrix = np.array([d[3] for d in files_data])
         
         ordered_indices = []
+        strict_monotonic = self.regexStrictMonotonic.get()
         
         for i in range(s_matrix.shape[1]):
             values = s_matrix[:, i]
-            if np.all(np.diff(values) >= 0) or np.all(np.diff(values) <= 0):
-                ordered_indices.append(i)
+            diffs = np.diff(values)
+            
+            if strict_monotonic:
+                # Strict monotonicity: all differences must be strictly positive or negative
+                if np.all(diffs > 0) or np.all(diffs < 0):
+                    ordered_indices.append(i)
+            else:
+                # Non-strict monotonicity: allow equal values
+                if np.all(diffs >= 0) or np.all(diffs <= 0):
+                    ordered_indices.append(i)
         
-
         freq_ranges = []
         if ordered_indices:
             start = ordered_indices[0]
@@ -402,16 +440,13 @@ class App(tk.Tk):
         return freq_ranges, freqs, s_matrix, labels
 
     def _updRegexPlot(self):
-
         self.figR.clear()
         
         pattern = self.regexPattern.get()
         param = self.regexParam.get()
         
-
         self.regexSpans = []
         
-
         files_data = []
         all_files_info = []  
         
@@ -434,7 +469,6 @@ class App(tk.Tk):
                 if ext in ['.s1p', '.s2p', '.s3p']:
                     ntw = loadFile(p)
                     
-
                     if self.regexGateChk.get():
                         center = self.gateCenter.get()
                         span = self.gateSpan.get()
@@ -450,18 +484,19 @@ class App(tk.Tk):
             except:
                 pass
         
-
         self.txt.config(state=tk.NORMAL)
         self.txt.delete(1.0, tk.END)
         self.txt.insert(tk.END, f"Regex: {pattern} (group {self.regexGroup.get()})\n")
         if self.regexGateChk.get():
             self.txt.insert(tk.END, f"Gating: {self.gateCenter.get()}±{self.gateSpan.get()/2} ns\n")
+        if self.regexHighlightChk.get():
+            mode = "Strict monotonic" if self.regexStrictMonotonic.get() else "Non-strict monotonic"
+            self.txt.insert(tk.END, f"Highlighting: {mode}\n")
         self.txt.insert(tk.END, "-" * 40 + "\n")
         for info in all_files_info:
             self.txt.insert(tk.END, info + "\n")
         self.txt.config(state=tk.DISABLED)
         
-
         self.axR = self.figR.add_subplot(111)
         
         if not files_data:
@@ -472,11 +507,9 @@ class App(tk.Tk):
             self.cvR.draw()
             return
         
-
         ranges, freqs, s_matrix, labels = self._analyzeOrderedRanges(files_data)
         self.regexRanges = ranges  
         
-
         colors = plt.cm.viridis(np.linspace(0, 1, len(labels)))
         
         self.regexLines = []
@@ -484,7 +517,6 @@ class App(tk.Tk):
             line, = self.axR.plot(freqs, s_data, label=label, color=colors[i])
             self.regexLines.append(line)
         
-
         if self.regexHighlightChk.get():
             for (f1, f2) in ranges:
                 span = self.axR.axvspan(f1, f2, color='yellow', alpha=0.3)
@@ -542,7 +574,6 @@ class App(tk.Tk):
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
             self.cbox.pack(anchor="w", pady=(2,0))
-
             self.txt.config(state=tk.NORMAL)
             self.txt.delete(1.0, tk.END)
             for txt in self.mtxt:
@@ -556,7 +587,6 @@ class App(tk.Tk):
             self.varBox.pack_forget()
             self.rbox.pack(anchor="w", pady=(2,0))
             self.gateBox.pack(anchor="w", pady=(8,0))
-
             self.txt.config(state=tk.NORMAL)
             self.txt.delete(1.0, tk.END)
             for txt in self.mtxt:
@@ -588,13 +618,13 @@ class App(tk.Tk):
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
             self.varBox.pack(anchor="w", pady=(2,0))
-
             if self.varData:
                 mean_var = np.mean(self.varData['total_variance'])
                 std_var = np.std(self.varData['total_variance'])
                 self.txt.config(state=tk.NORMAL)
                 self.txt.delete(1.0, tk.END)
-                self.txt.insert(tk.END, f"Variance Statistics:\n")
+                self.txt.insert(tk.END, f"Variance Statistics (Normalized Data):\n")
+                self.txt.insert(tk.END, f"Normalization: {self.varData['normalization_info']}\n")
                 self.txt.insert(tk.END, f"Mean total variance: {mean_var:.6f}\n")
                 self.txt.insert(tk.END, f"Std of variance: {std_var:.6f}\n")
                 self.txt.insert(tk.END, f"Files analyzed: {self.varData['file_count']}\n")
@@ -915,6 +945,8 @@ class App(tk.Tk):
             with open(filename, 'w') as f:
                 f.write(f"# Monotonic frequency ranges for pattern: {self.regexPattern.get()}\n")
                 f.write(f"# S-parameter: {self.regexParam.get().upper()}\n")
+                mode = "Strict monotonic" if self.regexStrictMonotonic.get() else "Non-strict monotonic"
+                f.write(f"# Monotonicity mode: {mode}\n")
                 f.write(f"# Format: start_freq end_freq (Hz)\n")
                 f.write("#\n")
                 for start, end in self.regexRanges:
@@ -922,7 +954,7 @@ class App(tk.Tk):
                 f.write("\n# Ranges in GHz:\n")
                 for start, end in self.regexRanges:
                     f.write(f"{start/1e9:.3f} {end/1e9:.3f}\n")
-            tk.            messagebox.showinfo("Export complete", f"Ranges saved to {filename}")
+            tk.messagebox.showinfo("Export complete", f"Ranges saved to {filename}")
 
     def _deleteSelectedFiles(self):
         toDelete = []
@@ -935,11 +967,9 @@ class App(tk.Tk):
             return
             
         if messagebox.askyesno("Confirm deletion", f"Remove {len(toDelete)} selected files from the list?"):
-
             for i in reversed(toDelete):
                 self.fls.pop(i)
             
-
             for widget in self.fbox.winfo_children():
                 widget.destroy()
             
@@ -983,7 +1013,6 @@ class App(tk.Tk):
             messagebox.showinfo("No data", "No regex ranges available. Run regex analysis first.")
             return
             
-        
         key = f"regex_{self.regexParam.get()}"
         self.overlapData[key] = [(s/1e9, e/1e9) for s, e in self.regexRanges]  # Convert to GHz
         self._updOverlapPlot()
@@ -1014,7 +1043,6 @@ class App(tk.Tk):
         y_positions = {}
         legend_elements = []
         
-       
         for i, (name, ranges) in enumerate(sorted(self.overlapData.items())):
             color = next(colors)
             y_positions[name] = i
@@ -1022,7 +1050,6 @@ class App(tk.Tk):
                 self.axO.plot([start, end], [i, i], color=color, linewidth=4)
             legend_elements.append(mpatches.Patch(color=color, label=f"{name}"))
         
-      
         for (name1, r1), (name2, r2) in combinations(self.overlapData.items(), 2):
             overlaps = self._findOverlaps(r1, r2)
             for s, e in overlaps:
@@ -1030,7 +1057,6 @@ class App(tk.Tk):
                 ymin, ymax = sorted([y1, y2])
                 self.axO.fill_betweenx([ymin - 0.15, ymax + 0.15], s, e, color='red', alpha=0.3)
         
-     
         self.txt.config(state=tk.NORMAL)
         self.txt.delete(1.0, tk.END)
         self.txt.insert(tk.END, "Frequency ranges (GHz):\n")
@@ -1101,27 +1127,72 @@ class App(tk.Tk):
         self.overlapData = {}
         self._updOverlapPlot()
 
+    def _normalizeForVariance(self, data, is_phase=False):
+        """Normalize data for variance analysis following basic_stats.py approach"""
+        if is_phase and self.varDetrend.get():
+            # For phase: detrend then z-score normalize
+            n_samples, n_frequencies = data.shape
+            detrended = np.zeros_like(data)
+            
+            for i in range(n_samples):
+                # Fit linear trend
+                x = np.arange(n_frequencies)
+                coeffs = np.polyfit(x, data[i], 1)
+                trend = np.polyval(coeffs, x)
+                detrended[i] = data[i] - trend
+            
+            # Z-score normalize the detrended data
+            mean = np.mean(detrended)
+            std = np.std(detrended) + 1e-10
+            return (detrended - mean) / std
+        else:
+            # For magnitude or phase without detrending: standard z-score
+            mean = np.mean(data)
+            std = np.std(data) + 1e-10
+            return (data - mean) / std
+
     def _calculateVariance(self):
         fmin = self.fmin.get()
         fmax = self.fmax.get()
         sstr = f"{fmin}-{fmax}ghz"
         
-    
         param_list = []
+        component_types = []  # Track which are magnitude vs phase
+        
         if self.varS11.get():
-            param_list.extend(['s11'])
+            if self.varMag.get():
+                param_list.append('s11_mag')
+                component_types.append('mag')
+            if self.varPhase.get():
+                param_list.append('s11_phase')
+                component_types.append('phase')
         if self.varS12.get():
-            param_list.extend(['s12'])
+            if self.varMag.get():
+                param_list.append('s12_mag')
+                component_types.append('mag')
+            if self.varPhase.get():
+                param_list.append('s12_phase')
+                component_types.append('phase')
         if self.varS21.get():
-            param_list.extend(['s21'])
+            if self.varMag.get():
+                param_list.append('s21_mag')
+                component_types.append('mag')
+            if self.varPhase.get():
+                param_list.append('s21_phase')
+                component_types.append('phase')
         if self.varS22.get():
-            param_list.extend(['s22'])
+            if self.varMag.get():
+                param_list.append('s22_mag')
+                component_types.append('mag')
+            if self.varPhase.get():
+                param_list.append('s22_phase')
+                component_types.append('phase')
         
         if not param_list:
             return None
         
-   
-        all_data = []
+        # Collect raw data first
+        raw_data_by_param = {param: [] for param in param_list}
         file_count = 0
         freq_ref = None
         
@@ -1138,58 +1209,80 @@ class App(tk.Tk):
                 if freq_ref is None:
                     freq_ref = ntw.f
                 elif len(ntw.f) != len(freq_ref) or not np.allclose(ntw.f, freq_ref, rtol=1e-6):
-                    continue  # Skip files with different frequency points
+                    continue
                 
-  
-                param_data = []
-                for prm in param_list:
-                    s_data = getattr(ntw, prm)
-                    
- 
-                    if self.varMag.get():
-                        param_data.append(s_data.s_db.flatten())
-                    if self.varPhase.get():
-
-                        phase = np.angle(s_data.s.flatten()) * 180 / np.pi
-                        param_data.append(phase)
+                # Collect data for each S-parameter
+                for sparam in ['s11', 's12', 's21', 's22']:
+                    if any(sparam in p for p in param_list):
+                        s_data = getattr(ntw, sparam)
+                        
+                        if f'{sparam}_mag' in param_list:
+                            raw_data_by_param[f'{sparam}_mag'].append(s_data.s_db.flatten())
+                        
+                        if f'{sparam}_phase' in param_list:
+                            phase_rad = np.angle(s_data.s.flatten())
+                            # Check if phase needs unwrapping (large jumps indicate wrapping)
+                            phase_deg = np.degrees(phase_rad)
+                            if np.any(np.abs(np.diff(phase_deg)) > 180):
+                                phase_unwrapped_rad = np.unwrap(phase_rad)
+                                phase_deg = np.degrees(phase_unwrapped_rad)
+                            raw_data_by_param[f'{sparam}_phase'].append(phase_deg)
                 
-                if param_data:
-                    all_data.append(np.concatenate(param_data))
-                    file_count += 1
+                file_count += 1
                     
             except Exception as e:
                 pass
         
         if file_count < 2 or freq_ref is None:
             return None
-            
-
-        data_array = np.array(all_data)
+        
         n_frequencies = len(freq_ref)
-        n_params = data_array.shape[1] // n_frequencies
+        n_params = len(param_list)
         
-
-        data_reshaped = data_array.reshape(file_count, n_frequencies, n_params)
+        # Normalize each parameter type separately
+        normalized_data = np.zeros((file_count, n_frequencies, n_params))
         
-
-        variance_by_param = np.var(data_reshaped, axis=0)  # [n_frequencies, n_params]
-        total_variance = np.sum(variance_by_param, axis=1)  # [n_frequencies]
+        for i, (param, comp_type) in enumerate(zip(param_list, component_types)):
+            # Convert list to array: (samples, frequencies)
+            param_data = np.array(raw_data_by_param[param])
+            
+            # Normalize based on type
+            normalized = self._normalizeForVariance(param_data, is_phase=(comp_type == 'phase'))
+            normalized_data[:, :, i] = normalized
         
-
+        # Calculate variance on normalized data
+        variance_by_param = np.var(normalized_data, axis=0, ddof=1)
+        total_variance = np.sum(variance_by_param, axis=1)
+        
+        # Calculate percentage contribution
         variance_contribution = np.zeros_like(variance_by_param)
         for freq_idx in range(n_frequencies):
-            if total_variance[freq_idx] > 0:
+            if total_variance[freq_idx] > 1e-10:
                 variance_contribution[freq_idx] = (variance_by_param[freq_idx] / 
                                                  total_variance[freq_idx]) * 100
+        
+        # Stats on normalized data
+        mean_by_param = np.mean(normalized_data, axis=0)
+        std_by_param = np.std(normalized_data, axis=0, ddof=1)
+        
+        # Create normalization info string
+        if self.varDetrend.get():
+            norm_info = 'Phase: detrended+z-score, Magnitude: z-score'
+        else:
+            norm_info = 'Phase: z-score (no detrending), Magnitude: z-score'
         
         return {
             'frequencies': freq_ref,
             'variance_by_param': variance_by_param,
             'variance_contribution': variance_contribution,
             'total_variance': total_variance,
+            'mean_by_param': mean_by_param,
+            'std_by_param': std_by_param,
             'n_params': n_params,
             'param_list': param_list,
-            'file_count': file_count
+            'file_count': file_count,
+            'normalized_data': normalized_data,
+            'normalization_info': norm_info
         }
 
     def _updVariancePlot(self):
@@ -1206,32 +1299,33 @@ class App(tk.Tk):
             self.cvV.draw()
             return
         
-
         freqs = self.varData['frequencies']
         var_contrib = self.varData['variance_contribution']
         n_params = self.varData['n_params']
         
-
         param_labels = []
-        for prm in self.varData['param_list']:
-            if self.varMag.get():
-                param_labels.append(f'{prm.upper()} Mag')
-            if self.varPhase.get():
-                param_labels.append(f'{prm.upper()} Phase')
+        for param in self.varData['param_list']:
+            # param is already like 's11_mag' or 's11_phase'
+            parts = param.split('_')
+            s_param = parts[0].upper()
+            comp_type = parts[1].capitalize()
+            param_labels.append(f'{s_param} {comp_type}')
         
-
         y = np.zeros((n_params, len(freqs)))
         for i in range(n_params):
             y[i] = var_contrib[:, i]
         
-
-        colors = plt.cm.viridis(np.linspace(0, 1, n_params))
+        # Use distinct colors for better visibility
+        if n_params <= 8:
+            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', 
+                     '#9467bd', '#8c564b', '#e377c2', '#7f7f7f'][:n_params]
+        else:
+            colors = plt.cm.tab20(np.linspace(0, 1, n_params))
         
-
         self.axV.stackplot(freqs, y, labels=param_labels[:n_params], 
                           colors=colors, alpha=0.8)
         
-
+        # Mark high variance frequencies
         mean_var = np.mean(self.varData['total_variance'])
         std_var = np.std(self.varData['total_variance'])
         high_var_mask = self.varData['total_variance'] > mean_var + 2 * std_var
@@ -1243,22 +1337,24 @@ class App(tk.Tk):
         
         self.axV.set_xlabel('Frequency [Hz]')
         self.axV.set_ylabel('Variance Contribution (%)')
-        self.axV.set_title(f'Variance Contribution by Component ({self.varData["file_count"]} files)')
+        self.axV.set_title(f'Normalized Variance Contribution by Component ({self.varData["file_count"]} files)')
         self.axV.grid(True, alpha=0.3)
-        self.axV.set_ylim(0, 100)
+        self.axV.set_ylim(0, 105)  # Give a bit more space at the top
+        
         if n_params <= 8:
             self.axV.legend(loc='upper right', fontsize=9)
         
-
+        # Store data for markers
         self.varFreqs = freqs
         self.varTotalVar = self.varData['total_variance']
         
-
+        # Update text widget
         mean_var = np.mean(self.varData['total_variance'])
         std_var = np.std(self.varData['total_variance'])
         self.txt.config(state=tk.NORMAL)
         self.txt.delete(1.0, tk.END)
-        self.txt.insert(tk.END, f"Variance Statistics:\n")
+        self.txt.insert(tk.END, f"Variance Statistics (Normalized Data):\n")
+        self.txt.insert(tk.END, f"Normalization: {self.varData['normalization_info']}\n")
         self.txt.insert(tk.END, f"Mean total variance: {mean_var:.6f}\n")
         self.txt.insert(tk.END, f"Std of variance: {std_var:.6f}\n")
         self.txt.insert(tk.END, f"Files analyzed: {self.varData['file_count']}\n")
@@ -1267,14 +1363,14 @@ class App(tk.Tk):
             self.txt.insert(tk.END, txt)
         self.txt.config(state=tk.DISABLED)
         
-        self.figV.tight_layout()
+        # Adjust layout to prevent marker cutoff
+        self.figV.tight_layout(rect=[0, 0, 1, 0.95])  # Leave space at top
         self.cvV.draw()
 
     def _onMotionVar(self, event):
         if event.inaxes != self.axV or self.varData is None:
             return
             
-
         x = event.xdata
         if x is None:
             return
@@ -1283,26 +1379,22 @@ class App(tk.Tk):
         freq = self.varFreqs[idx]
         var = self.varTotalVar[idx]
         
-
         var_contrib = self.varData['variance_contribution'][idx, :]
         
-
         msg = f"Freq: {freq/1e6:.3f} MHz, Total Var: {var:.6f}"
         
-
         if len(var_contrib) > 0:
             top_idx = np.argmax(var_contrib)
             param_labels = []
-            for prm in self.varData['param_list']:
-                if self.varMag.get():
-                    param_labels.append(f'{prm.upper()} Mag')
-                if self.varPhase.get():
-                    param_labels.append(f'{prm.upper()} Phase')
+            for param in self.varData['param_list']:
+                parts = param.split('_')
+                s_param = parts[0].upper()
+                comp_type = parts[1].capitalize()
+                param_labels.append(f'{s_param} {comp_type}')
             
             if top_idx < len(param_labels):
                 msg += f", Max: {param_labels[top_idx]} ({var_contrib[top_idx]:.1f}%)"
         
-
         self.tbV.set_message(msg)
 
     def _onClickVar(self, event):
@@ -1317,21 +1409,19 @@ class App(tk.Tk):
         if x is None:
             return
             
-
         idx = np.argmin(np.abs(self.varFreqs - x))
         freq = self.varFreqs[idx]
         var = self.varTotalVar[idx]
         
-
-        y_pos = np.sum(self.varData['variance_contribution'][idx, :])
+        # Place marker slightly below 100% to ensure visibility
+        y_pos = 95  # Fixed position at 95%
         
-
         m, = self.axV.plot([freq], [y_pos], 'ro', markersize=10, picker=7)
         
-        # Add annotation
+        # Add annotation with downward pointing arrow
         t = self.axV.annotate(
             f"{freq/1e6:.3f} MHz\nVar: {var:.4f}",
-            xy=(freq, y_pos), xytext=(10, 20),
+            xy=(freq, y_pos), xytext=(10, -30),  # Place text below marker
             textcoords="offset points",
             bbox=dict(boxstyle="round,pad=0.2", fc="yellow", alpha=0.8),
             arrowprops=dict(arrowstyle="->", color='red', lw=1.5),
@@ -1341,8 +1431,24 @@ class App(tk.Tk):
         
         self.varMrk.append({'marker': m, 'text': t})
         
-
-        txt = f"Variance marker: {freq/1e6:.3f} MHz, Total variance: {var:.4f}\n"
+        # Add detailed breakdown to text
+        txt = f"Variance marker: {freq/1e6:.3f} MHz\n"
+        txt += f"  Total variance: {var:.4f}\n"
+        
+        # Add breakdown by parameter
+        param_labels = []
+        for param in self.varData['param_list']:
+            parts = param.split('_')
+            s_param = parts[0].upper()
+            comp_type = parts[1].capitalize()
+            param_labels.append(f'{s_param} {comp_type}')
+        
+        var_by_param = self.varData['variance_by_param'][idx]
+        var_contrib = self.varData['variance_contribution'][idx]
+        
+        for i, label in enumerate(param_labels):
+            txt += f"  {label}: {var_by_param[i]:.6f} ({var_contrib[i]:.1f}%)\n"
+        
         self.varMtxt.append(txt)
         self.txt.config(state=tk.NORMAL)
         self.txt.insert(tk.END, txt)
@@ -1370,13 +1476,13 @@ class App(tk.Tk):
         self.varMrk.clear()
         self.varMtxt.clear()
         
-
         if self.varData:
             mean_var = np.mean(self.varData['total_variance'])
             std_var = np.std(self.varData['total_variance'])
             self.txt.config(state=tk.NORMAL)
             self.txt.delete(1.0, tk.END)
-            self.txt.insert(tk.END, f"Variance Statistics:\n")
+            self.txt.insert(tk.END, f"Variance Statistics (Normalized Data):\n")
+            self.txt.insert(tk.END, f"Normalization: {self.varData['normalization_info']}\n")
             self.txt.insert(tk.END, f"Mean total variance: {mean_var:.6f}\n")
             self.txt.insert(tk.END, f"Std of variance: {std_var:.6f}\n")
             self.txt.insert(tk.END, f"Files analyzed: {self.varData['file_count']}\n")
@@ -1404,14 +1510,9 @@ class App(tk.Tk):
             return
             
         with open(filename, 'w') as f:
-            f.write("# Variance Analysis\n")
+            f.write("# Variance Analysis (Normalized Data)\n")
+            f.write(f"# Normalization: {self.varData['normalization_info']}\n")
             f.write(f"# Parameters: {', '.join(self.varData['param_list'])}\n")
-            components = []
-            if self.varMag.get():
-                components.append("Magnitude")
-            if self.varPhase.get():
-                components.append("Phase")
-            f.write(f"# Components: {', '.join(components)}\n")
             f.write(f"# Number of files: {self.varData['file_count']}\n")
             f.write(f"# Mean total variance: {np.mean(self.varData['total_variance']):.6f}\n")
             f.write(f"# Std total variance: {np.std(self.varData['total_variance']):.6f}\n")
