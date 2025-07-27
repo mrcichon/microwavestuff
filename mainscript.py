@@ -1791,70 +1791,74 @@ class App(tk.Tk):
         thread.start()
         
     def _runCrossValidationThread(self):
-        self.after(0, self.trainProgress.start, 10)
-        
-        def update_text():
-            self.txt.config(state=tk.NORMAL)
-            self.txt.delete(1.0, tk.END)
-            self.txt.insert(tk.END, "Running cross-validation...\n")
-            self.txt.insert(tk.END, "This may take several minutes.\n\n")
-            self.txt.config(state=tk.DISABLED)
-        self.after(0, update_text)
-        
-        try:
-            device = self.trainDevice.get()
-            if device == "cuda" and self.torch and not self.torch.cuda.is_available():
-                device = "cpu"
-                def warn_cuda():
-                    self.txt.config(state=tk.NORMAL)
-                    self.txt.insert(tk.END, "WARNING: CUDA not available, using CPU instead.\n\n")
-                    self.txt.config(state=tk.DISABLED)
-                self.after(0, warn_cuda)
+            self.after(0, self.trainProgress.start, 10)
             
-            import io
-            import sys
-            old_stdout = sys.stdout
-            sys.stdout = io.StringIO()
-            
-            fold_results, avg_mae, std_mae = self.water_pred.cross_validate_water_predictor(
-                data_dirs=self.trainDataDirs,
-                device=device,
-                hidden_dim=self.trainHiddenDim.get(),
-                latent_dim=self.trainLatentDim.get(),
-                dropout=self.trainDropout.get(),
-                lr=self.trainLR.get(),
-                weight_decay=self.trainWeightDecay.get(),
-                loss_fn=self.trainLossFn.get(),
-                augment=self.trainAugment.get(),
-                noise_std=self.trainNoise.get(),
-                use_batchnorm=self.trainBatchNorm.get(),
-                epochs=self.trainEpochs.get(),
-                patience=self.trainPatience.get()
-            )
-            
-            sys.stdout = old_stdout
-            
-            def update_results():
-                self._plotCrossValidationResults(fold_results, avg_mae, std_mae)
-                
+            def update_text():
                 self.txt.config(state=tk.NORMAL)
-                self.txt.insert(tk.END, f"\nCross-validation complete!\n")
-                self.txt.insert(tk.END, f"Average MAE: {avg_mae:.2f} ± {std_mae:.2f} ml\n")
-                self.txt.insert(tk.END, "\nFold results:\n")
-                for i, result in enumerate(fold_results):
-                    self.txt.insert(tk.END, f"  Fold {i+1}: MAE = {result['val_mae']:.2f} ml\n")
+                self.txt.delete(1.0, tk.END)
+                self.txt.insert(tk.END, "Running cross-validation...\n")
+                self.txt.insert(tk.END, "This may take several minutes.\n\n")
                 self.txt.config(state=tk.DISABLED)
+            self.after(0, update_text)
+            
+            try:
+                device = self.trainDevice.get()
+                if device == "cuda" and self.torch and not self.torch.cuda.is_available():
+                    device = "cpu"
+                    def warn_cuda():
+                        self.txt.config(state=tk.NORMAL)
+                        self.txt.insert(tk.END, "WARNING: CUDA not available, using CPU instead.\n\n")
+                        self.txt.config(state=tk.DISABLED)
+                    self.after(0, warn_cuda)
                 
-            self.after(0, update_results)
-            
-        except Exception as e:
-            error_msg = str(e)
-            if "expected more than 1 value per channel" in error_msg:
-                error_msg = "Not enough data for cross-validation with batch normalization.\nTry disabling batch norm or adding more training data."
-            self.after(0, messagebox.showerror, "Error", f"Cross-validation failed:\n{error_msg}")
-            
-        finally:
-            self.after(0, self.trainProgress.stop)
+                import io
+                import sys
+                old_stdout = sys.stdout
+                sys.stdout = io.StringIO()
+                
+                fold_results, avg_mae, std_mae = self.water_pred.cross_validate_water_predictor(
+                    data_dirs=self.trainDataDirs,
+                    device=device,
+                    hidden_dim=self.trainHiddenDim.get(),
+                    latent_dim=self.trainLatentDim.get(),
+                    dropout=self.trainDropout.get(),
+                    lr=self.trainLR.get(),
+                    weight_decay=self.trainWeightDecay.get(),
+                    loss_fn=self.trainLossFn.get(),
+                    augment=self.trainAugment.get(),
+                    noise_std=self.trainNoise.get(),
+                    use_batchnorm=self.trainBatchNorm.get(),
+                    epochs=self.trainEpochs.get(),
+                    patience=self.trainPatience.get()
+                )
+                
+                sys.stdout = old_stdout
+                
+                def update_results():
+                    self._plotCrossValidationResults(fold_results, avg_mae, std_mae)
+                    
+                    self.txt.config(state=tk.NORMAL)
+                    self.txt.insert(tk.END, f"\nCross-validation complete!\n")
+                    self.txt.insert(tk.END, f"Average MAE: {avg_mae:.2f} ± {std_mae:.2f} ml\n")
+                    self.txt.insert(tk.END, "\nFold results:\n")
+                    for i, result in enumerate(fold_results):
+                        self.txt.insert(tk.END, f"  Fold {i+1}: MAE = {result['val_mae']:.2f} ml\n")
+                    
+                    if os.path.exists('water_prediction_results.png'):
+                        self.txt.insert(tk.END, "\nPlot saved to: water_prediction_results.png\n")
+                    self.txt.config(state=tk.DISABLED)
+                    
+                self.after(0, update_results)
+                
+            except Exception as e:
+                error_msg = str(e)
+                if "expected more than 1 value per channel" in error_msg:
+                    error_msg = "Not enough data for cross-validation with batch normalization.\nTry disabling batch norm or adding more training data."
+                self.after(0, messagebox.showerror, "Error", f"Cross-validation failed:\n{error_msg}")
+                
+            finally:
+                self.after(0, self.trainProgress.stop)
+
             
     def _trainFinalModel(self):
         if not self.modelTrainingAvailable:
@@ -1926,6 +1930,29 @@ class App(tk.Tk):
                 self.txt.config(state=tk.NORMAL)
                 self.txt.insert(tk.END, f"\nModel training complete!\n")
                 self.txt.insert(tk.END, f"Model saved to: {save_path}\n")
+                
+                if os.path.exists('final_model_training.png'):
+                    self.txt.insert(tk.END, "Plot saved to: final_model_training.png\n")
+                    
+                    try:
+                        from PIL import Image
+                        img = Image.open('final_model_training.png')
+                        
+                        self.axM1.clear()
+                        self.axM2.clear()
+                        
+                        self.axM1.imshow(img)
+                        self.axM1.axis('off')
+                        self.axM2.text(0.5, 0.5, "Training complete!\nSee final_model_training.png", 
+                                      ha="center", va="center", fontsize=12)
+                        self.axM2.set_xticks([])
+                        self.axM2.set_yticks([])
+                        
+                        self.figM.tight_layout()
+                        self.cvM.draw()
+                    except:
+                        pass
+                
                 self.txt.config(state=tk.DISABLED)
                 
                 messagebox.showinfo("Success", f"Model trained and saved to:\n{save_path}")
@@ -1937,7 +1964,8 @@ class App(tk.Tk):
             
         finally:
             self.after(0, self.trainProgress.stop)
-            
+
+
     def _loadModel(self):
         if not self.modelTrainingAvailable:
             return

@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for thread safety
 import matplotlib.pyplot as plt
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
@@ -485,7 +487,7 @@ def cross_validate_water_predictor(data_dirs: List[str], n_folds: int = 5, devic
     
     plt.tight_layout()
     plt.savefig('water_prediction_results.png', dpi=300)
-    plt.show()
+    plt.close()  # Close figure instead of showing
     
     return fold_results, avg_mae, std_mae
 
@@ -560,7 +562,7 @@ def train_final_model(data_dirs: List[str], model_save_path: str = 'water_predic
     
     plt.tight_layout()
     plt.savefig('final_model_training.png', dpi=300)
-    plt.show()
+    plt.close()  # Close figure instead of showing
     
     return model, dataset
 
