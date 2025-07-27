@@ -85,6 +85,7 @@ class App(tk.Tk):
         self.regexRanges = []
         self.regexSmallDiffChk = tk.BooleanVar(value=False)
         self.regexSmallDiffThreshold = ValidatedDoubleVar(value=0.1)
+        self.regexSmallDiffMinCount = tk.IntVar(value=1)
         
         self.overlapData = {}
         self.fileListCanvas = None
@@ -276,6 +277,12 @@ class App(tk.Tk):
         thresholdEntry.pack(side=tk.LEFT, padx=2)
         self._validateNumeric(thresholdEntry, self.regexSmallDiffThreshold, self._updRegexPlot)
         ttk.Label(smallDiffFrame, text="dB").pack(side=tk.LEFT, padx=(0,5))
+        ttk.Label(smallDiffFrame, text="Min count:").pack(side=tk.LEFT, padx=(10,2))
+        minCountSpin = ttk.Spinbox(smallDiffFrame, from_=1, to=10, width=5,
+                                   textvariable=self.regexSmallDiffMinCount, 
+                                   command=self._updRegexPlot)
+        minCountSpin.pack(side=tk.LEFT, padx=2)
+        ttk.Label(smallDiffFrame, text="diffs", font=("", 8)).pack(side=tk.LEFT, padx=(0,5))
         
         strictHelpFrame = ttk.Frame(self.regexBox)
         strictHelpFrame.pack(anchor="w", pady=(2,0))
@@ -544,7 +551,11 @@ class App(tk.Tk):
     def _updateColorInfo(self):
         if self.regexSmallDiffChk.get():
             threshold = self.regexSmallDiffThreshold.get()
-            text = f"Green: monotonic | Blue(od serca dla daltonistów): differences ≤ {threshold} dB"
+            min_count = self.regexSmallDiffMinCount.get()
+            if min_count == 1:
+                text = f"Green: monotonic | Blue: any difference ≤ {threshold} dB"
+            else:
+                text = f"Green: monotonic | Blue: ≥{min_count} differences ≤ {threshold} dB"
         else:
             text = "Green: monotonic regions"
         self.colorInfoLabel.config(text=text)
@@ -613,12 +624,15 @@ class App(tk.Tk):
         
         small_diff_ranges = []
         if self.regexSmallDiffChk.get() and ordered_indices:
+            min_count = self.regexSmallDiffMinCount.get()
             for i in ordered_indices:
                 values = s_matrix[:, i]
                 diffs = np.diff(values)
                 abs_diffs = np.abs(diffs)
                 
-                if np.any(abs_diffs <= threshold):
+                small_diff_count = np.sum(abs_diffs <= threshold)
+                
+                if small_diff_count >= min_count:
                     small_diff_ranges.append((freqs[i], freqs[i]))
         
         merged_small_diff_ranges = []
