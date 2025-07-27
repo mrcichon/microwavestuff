@@ -83,6 +83,8 @@ class App(tk.Tk):
         self.regexSpans = []
         self.regexLines = []
         self.regexRanges = []
+        self.regexSmallDiffChk = tk.BooleanVar(value=False)
+        self.regexSmallDiffThreshold = ValidatedDoubleVar(value=0.1)
         
         self.overlapData = {}
         self.fileListCanvas = None
@@ -263,10 +265,28 @@ class App(tk.Tk):
         self.exportRangesBtn = ttk.Button(regexCtrlFrame, text="Export ranges", command=self._exportRanges)
         self.exportRangesBtn.pack(side=tk.LEFT, padx=3)
         
+        smallDiffFrame = ttk.Frame(self.regexBox)
+        smallDiffFrame.pack(anchor="w", pady=(5,0))
+        self.regexSmallDiffCheckBtn = ttk.Checkbutton(smallDiffFrame, text="Highlight small diffs", 
+                                                      variable=self.regexSmallDiffChk, 
+                                                      command=self._updRegexPlot)
+        self.regexSmallDiffCheckBtn.pack(side=tk.LEFT, padx=3)
+        ttk.Label(smallDiffFrame, text="Threshold:").pack(side=tk.LEFT, padx=(10,2))
+        thresholdEntry = ttk.Entry(smallDiffFrame, textvariable=self.regexSmallDiffThreshold, width=6)
+        thresholdEntry.pack(side=tk.LEFT, padx=2)
+        self._validateNumeric(thresholdEntry, self.regexSmallDiffThreshold, self._updRegexPlot)
+        ttk.Label(smallDiffFrame, text="dB").pack(side=tk.LEFT, padx=(0,5))
+        
         strictHelpFrame = ttk.Frame(self.regexBox)
         strictHelpFrame.pack(anchor="w", pady=(2,0))
         ttk.Label(strictHelpFrame, text="Strict: no equal consecutive values; Non-strict: allows equal values", 
                  font=("", 8), foreground="gray").pack(anchor="w")
+        
+        self.colorInfoFrame = ttk.Frame(self.regexBox)
+        self.colorInfoFrame.pack(anchor="w", pady=(2,0))
+        self.colorInfoLabel = ttk.Label(self.colorInfoFrame, text="", font=("", 8), foreground="gray")
+        self.colorInfoLabel.pack(anchor="w")
+        self._updateColorInfo()
         
         gatingFrame = ttk.Frame(self.regexBox)
         gatingFrame.pack(anchor="w", pady=(3,0))
@@ -521,6 +541,14 @@ class App(tk.Tk):
         self.cvV.mpl_connect('pick_event', self._onPickVar)
         self.cvV.mpl_connect('motion_notify_event', self._onMotionVar)
 
+    def _updateColorInfo(self):
+        if self.regexSmallDiffChk.get():
+            threshold = self.regexSmallDiffThreshold.get()
+            text = f"Green: monotonic | Blue(od serca dla daltonistów): differences ≤ {threshold} dB"
+        else:
+            text = "Green: monotonic regions"
+        self.colorInfoLabel.config(text=text)
+
     def _setRegex(self, pattern):
         self.regexPattern.set(pattern)
         self._updRegexPlot()
@@ -547,7 +575,7 @@ class App(tk.Tk):
 
     def _analyzeOrderedRanges(self, files_data):
         if not files_data:
-            return [], None, None, []
+            return [], None, None, [], []
             
         files_data.sort(key=lambda x: x[1])
         labels = [d[0] for d in files_data]
@@ -556,17 +584,22 @@ class App(tk.Tk):
         
         ordered_indices = []
         strict_monotonic = self.regexStrictMonotonic.get()
+        threshold = self.regexSmallDiffThreshold.get()
         
         for i in range(s_matrix.shape[1]):
             values = s_matrix[:, i]
             diffs = np.diff(values)
             
+            is_monotonic = False
             if strict_monotonic:
                 if np.all(diffs > 0) or np.all(diffs < 0):
-                    ordered_indices.append(i)
+                    is_monotonic = True
             else:
                 if np.all(diffs >= 0) or np.all(diffs <= 0):
-                    ordered_indices.append(i)
+                    is_monotonic = True
+            
+            if is_monotonic:
+                ordered_indices.append(i)
         
         freq_ranges = []
         if ordered_indices:
@@ -578,7 +611,36 @@ class App(tk.Tk):
                     start = ordered_indices[i]
             freq_ranges.append((freqs[start], freqs[ordered_indices[-1]]))
         
-        return freq_ranges, freqs, s_matrix, labels
+        small_diff_ranges = []
+        if self.regexSmallDiffChk.get() and ordered_indices:
+            for i in ordered_indices:
+                values = s_matrix[:, i]
+                diffs = np.diff(values)
+                abs_diffs = np.abs(diffs)
+                
+                if np.any(abs_diffs <= threshold):
+                    small_diff_ranges.append((freqs[i], freqs[i]))
+        
+        merged_small_diff_ranges = []
+        if small_diff_ranges:
+            start_freq = small_diff_ranges[0][0]
+            end_freq = small_diff_ranges[0][1]
+            
+            for i in range(1, len(small_diff_ranges)):
+                curr_start, curr_end = small_diff_ranges[i]
+                freq_idx_prev = np.where(freqs == end_freq)[0][0]
+                freq_idx_curr = np.where(freqs == curr_start)[0][0]
+                
+                if freq_idx_curr == freq_idx_prev + 1:
+                    end_freq = curr_end
+                else:
+                    merged_small_diff_ranges.append((start_freq, end_freq))
+                    start_freq = curr_start
+                    end_freq = curr_end
+            
+            merged_small_diff_ranges.append((start_freq, end_freq))
+        
+        return freq_ranges, freqs, s_matrix, labels, merged_small_diff_ranges
 
     def _updRegexPlot(self):
         self.figR.clear()
@@ -625,6 +687,8 @@ class App(tk.Tk):
             except:
                 pass
         
+        self._updateColorInfo()
+        
         self.txt.config(state=tk.NORMAL)
         self.txt.delete(1.0, tk.END)
         self.txt.insert(tk.END, f"Regex: {pattern} (group {self.regexGroup.get()})\n")
@@ -633,6 +697,8 @@ class App(tk.Tk):
         if self.regexHighlightChk.get():
             mode = "Strict monotonic" if self.regexStrictMonotonic.get() else "Non-strict monotonic"
             self.txt.insert(tk.END, f"Highlighting: {mode}\n")
+        if self.regexSmallDiffChk.get():
+            self.txt.insert(tk.END, f"Small diff threshold: {self.regexSmallDiffThreshold.get()} dB\n")
         self.txt.insert(tk.END, "-" * 40 + "\n")
         for info in all_files_info:
             self.txt.insert(tk.END, info + "\n")
@@ -648,7 +714,7 @@ class App(tk.Tk):
             self.cvR.draw()
             return
         
-        ranges, freqs, s_matrix, labels = self._analyzeOrderedRanges(files_data)
+        ranges, freqs, s_matrix, labels, small_diff_ranges = self._analyzeOrderedRanges(files_data)
         self.regexRanges = ranges
         
         colors = plt.cm.viridis(np.linspace(0, 1, len(labels)))
@@ -660,8 +726,13 @@ class App(tk.Tk):
         
         if self.regexHighlightChk.get():
             for (f1, f2) in ranges:
-                span = self.axR.axvspan(f1, f2, color='yellow', alpha=0.3)
+                span = self.axR.axvspan(f1, f2, color='green', alpha=0.3)
                 self.regexSpans.append(span)
+            
+            if self.regexSmallDiffChk.get():
+                for (f1, f2) in small_diff_ranges:
+                    span = self.axR.axvspan(f1, f2, color='blue', alpha=0.5)
+                    self.regexSpans.append(span)
         
         self.axR.set_xlabel("Frequency [Hz]")
         self.axR.set_ylabel(f"|{param.upper()}| [dB]")
