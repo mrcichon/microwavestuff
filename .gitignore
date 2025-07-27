@@ -3,6 +3,10 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# why the fuck did i not do this the previous time
+*.png
+*.jpg
+
 # C extensions
 *.so
 
