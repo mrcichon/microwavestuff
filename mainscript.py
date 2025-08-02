@@ -492,10 +492,12 @@ class App(tk.Tk):
         
         self.fig, self.ax = plt.subplots(figsize=(10,7))
         self.cv = FigureCanvasTkAgg(self.fig, master=plotFrame)
-        self.cv.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        canvas_widget = self.cv.get_tk_widget()
+        
         self.tb = NavigationToolbar2Tk(self.cv, plotFrame)
         self.tb.update()
-        self.tb.pack(fill=tk.X)
+        
+        canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
         
         self.legendFrame = ttk.Frame(self.plotPane)
         self.plotPane.add(self.legendFrame, weight=1)
@@ -527,10 +529,12 @@ class App(tk.Tk):
         
         self.figT, self.axT = plt.subplots(figsize=(10,10))
         self.cvT = FigureCanvasTkAgg(self.figT, master=plotFrameT)
-        self.cvT.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        canvas_widget = self.cvT.get_tk_widget()
+        
         self.tbT = NavigationToolbar2Tk(self.cvT, plotFrameT)
         self.tbT.update()
-        self.tbT.pack(fill=tk.X)
+        
+        canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
         
         self.legendFrameT = ttk.Frame(self.plotPaneT)
         self.plotPaneT.add(self.legendFrameT, weight=1)
@@ -890,6 +894,10 @@ class App(tk.Tk):
                 self.txt.insert(tk.END, txt)
             self.txt.config(state=tk.DISABLED)
             self._updTPlot()  
+            if os.name == 'nt' and hasattr(self, 'tbT'):
+                if not self.tbT.winfo_ismapped():
+                    self.tbT.pack(side=tk.BOTTOM, fill=tk.X)
+                self.tbT.update()
         elif tabTxt == "Regex Highlighting":
             self.tab = "regex"
             self.cbox.pack_forget()
@@ -1206,6 +1214,11 @@ class App(tk.Tk):
         
         self.figT.tight_layout()
         self.cvT.draw()
+        
+        if os.name == 'nt' and hasattr(self, 'tbT'):
+            self.tbT.update()
+            if not self.tbT.winfo_ismapped():
+                self.tbT.pack(side=tk.BOTTOM, fill=tk.X)
         
         all_files = set(legF + legTR + legTG)
         for lbl in sorted(all_files):
