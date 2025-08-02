@@ -6,6 +6,7 @@ import threading
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
+import matplotlib.colors
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib.patches as mpatches
 import skrf as rf
@@ -166,6 +167,10 @@ class App(tk.Tk):
         btn3 = ttk.Button(lfrm, text="Usuń zaznaczone pliki", command=self._deleteSelectedFiles)
         btn3.pack(anchor="w", pady=(0,10))
         
+        self.legendVisible = tk.BooleanVar(value=True)
+        ttk.Checkbutton(lfrm, text="Show legend panel", variable=self.legendVisible, 
+                       command=self._toggleLegend).pack(anchor="w", pady=(0,10))
+        
         fileListFrame = ttk.Frame(lfrm)
         fileListFrame.pack(anchor="w", fill=tk.BOTH, pady=(0,10))
         
@@ -224,8 +229,6 @@ class App(tk.Tk):
         self.gateSpanEntry.pack(side=tk.LEFT, padx=3)
         self._validateNumeric(self.gateSpanEntry, self.gateSpan, self._updAll)
         self.cbox.pack(anchor="w", pady=(2,0))
-        self.openGatedBtn = ttk.Button(self.gateBox, text="Otwórz gated (freq) w Matplotlib", command=self._showGatedPlot)
-        self.openGatedBtn.pack(side=tk.LEFT, padx=8)
         
         self.regexBox = ttk.Frame(lfrm)
         
@@ -471,33 +474,117 @@ class App(tk.Tk):
         nb = ttk.Notebook(self)
         nb.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         self.nb = nb
+        
         frmF = ttk.Frame(nb)
         nb.add(frmF, text="Wykresy")
         self.nb.bind("<<NotebookTabChanged>>", self._onTab)
+        
+        self.plotPane = ttk.PanedWindow(frmF, orient=tk.HORIZONTAL)
+        self.plotPane.pack(fill=tk.BOTH, expand=True)
+        
+        plotFrame = ttk.Frame(self.plotPane)
+        self.plotPane.add(plotFrame, weight=3)
+        
         self.fig, self.ax = plt.subplots(figsize=(10,7))
-        self.cv = FigureCanvasTkAgg(self.fig, master=frmF)
+        self.cv = FigureCanvasTkAgg(self.fig, master=plotFrame)
         self.cv.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        self.tb = NavigationToolbar2Tk(self.cv, frmF)
+        self.tb = NavigationToolbar2Tk(self.cv, plotFrame)
         self.tb.update()
         self.tb.pack(fill=tk.X)
         
+        self.legendFrame = ttk.Frame(self.plotPane)
+        self.plotPane.add(self.legendFrame, weight=1)
+        
+        ttk.Label(self.legendFrame, text="Legend", font=("", 10, "bold")).pack(pady=5)
+        
+        legendScroll = ttk.Scrollbar(self.legendFrame)
+        legendScroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.legendCanvas = tk.Canvas(self.legendFrame, yscrollcommand=legendScroll.set, width=150)
+        self.legendCanvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        legendScroll.config(command=self.legendCanvas.yview)
+        
+        self.legendItemsFrame = ttk.Frame(self.legendCanvas)
+        self.legendCanvas.create_window((0,0), window=self.legendItemsFrame, anchor="nw")
+        
+        def updateLegendScroll(event=None):
+            self.legendCanvas.configure(scrollregion=self.legendCanvas.bbox("all"))
+        self.legendItemsFrame.bind("<Configure>", updateLegendScroll)
+        
         frmT = ttk.Frame(nb)
         nb.add(frmT, text="Time domain")
+        
+        self.plotPaneT = ttk.PanedWindow(frmT, orient=tk.HORIZONTAL)
+        self.plotPaneT.pack(fill=tk.BOTH, expand=True)
+        
+        plotFrameT = ttk.Frame(self.plotPaneT)
+        self.plotPaneT.add(plotFrameT, weight=3)
+        
         self.figT, self.axT = plt.subplots(figsize=(10,10))
-        self.cvT = FigureCanvasTkAgg(self.figT, master=frmT)
+        self.cvT = FigureCanvasTkAgg(self.figT, master=plotFrameT)
         self.cvT.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        self.tbT = NavigationToolbar2Tk(self.cvT, frmT)
+        self.tbT = NavigationToolbar2Tk(self.cvT, plotFrameT)
         self.tbT.update()
         self.tbT.pack(fill=tk.X)
         
+        self.legendFrameT = ttk.Frame(self.plotPaneT)
+        self.plotPaneT.add(self.legendFrameT, weight=1)
+        
+        ttk.Label(self.legendFrameT, text="Legend", font=("", 10, "bold")).pack(pady=5)
+        
+        legendScrollT = ttk.Scrollbar(self.legendFrameT)
+        legendScrollT.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.legendCanvasT = tk.Canvas(self.legendFrameT, yscrollcommand=legendScrollT.set, width=150)
+        self.legendCanvasT.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        legendScrollT.config(command=self.legendCanvasT.yview)
+        
+        self.legendItemsFrameT = ttk.Frame(self.legendCanvasT)
+        self.legendCanvasT.create_window((0,0), window=self.legendItemsFrameT, anchor="nw")
+        
+        def updateLegendScrollT(event=None):
+            self.legendCanvasT.configure(scrollregion=self.legendCanvasT.bbox("all"))
+        self.legendItemsFrameT.bind("<Configure>", updateLegendScrollT)
+        
         frmR = ttk.Frame(nb)
         nb.add(frmR, text="Regex Highlighting")
+        
+        self.plotPaneR = ttk.PanedWindow(frmR, orient=tk.HORIZONTAL)
+        self.plotPaneR.pack(fill=tk.BOTH, expand=True)
+        
+        plotFrameR = ttk.Frame(self.plotPaneR)
+        self.plotPaneR.add(plotFrameR, weight=3)
+        
         self.figR, self.axR = plt.subplots(figsize=(10,7))
-        self.cvR = FigureCanvasTkAgg(self.figR, master=frmR)
+        self.cvR = FigureCanvasTkAgg(self.figR, master=plotFrameR)
         self.cvR.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        self.tbR = NavigationToolbar2Tk(self.cvR, frmR)
+        self.tbR = NavigationToolbar2Tk(self.cvR, plotFrameR)
         self.tbR.update()
         self.tbR.pack(fill=tk.X)
+        
+        self.legendFrameR = ttk.Frame(self.plotPaneR)
+        self.plotPaneR.add(self.legendFrameR, weight=1)
+        
+        ttk.Label(self.legendFrameR, text="Legend", font=("", 10, "bold")).pack(pady=5)
+        
+        legendScrollR = ttk.Scrollbar(self.legendFrameR)
+        legendScrollR.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.legendCanvasR = tk.Canvas(self.legendFrameR, yscrollcommand=legendScrollR.set, width=150)
+        self.legendCanvasR.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        legendScrollR.config(command=self.legendCanvasR.yview)
+        
+        self.legendItemsFrameR = ttk.Frame(self.legendCanvasR)
+        self.legendCanvasR.create_window((0,0), window=self.legendItemsFrameR, anchor="nw")
+        
+        def updateLegendScrollR(event=None):
+            self.legendCanvasR.configure(scrollregion=self.legendCanvasR.bbox("all"))
+        self.legendItemsFrameR.bind("<Configure>", updateLegendScrollR)
+        
+        if not self.legendVisible.get():
+            self.plotPane.forget(self.legendFrame)
+            self.plotPaneT.forget(self.legendFrameT)
+            self.plotPaneR.forget(self.legendFrameR)
         
         frmO = ttk.Frame(nb)
         nb.add(frmO, text="Range Overlaps")
@@ -737,9 +824,11 @@ class App(tk.Tk):
         colors = plt.cm.viridis(np.linspace(0, 1, len(labels)))
         
         self.regexLines = []
+        legend_items = []
         for i, (s_data, label) in enumerate(zip(s_matrix, labels)):
             line, = self.axR.plot(freqs, s_data, label=label, color=colors[i])
             self.regexLines.append(line)
+            legend_items.append((label, matplotlib.colors.to_hex(colors[i])))
         
         if self.regexHighlightChk.get():
             for (f1, f2) in ranges:
@@ -758,43 +847,11 @@ class App(tk.Tk):
             title += f" - Gated ({self.gateCenter.get()}±{self.gateSpan.get()/2} ns)"
         self.axR.set_title(title)
         self.axR.grid(True)
-        self.axR.legend()
         
         self.figR.tight_layout()
         self.cvR.draw()
         
-    def _showGatedPlot(self):
-        prm = self.td.get()
-        center = self.gateCenter.get()
-        span = self.gateSpan.get()
-        plt.figure(figsize=(10,4))
-        legTG = []
-        for v, p, d in self.fls:
-            if not v.get(): continue
-            ext = Path(p).suffix.lower()
-            lbl = Path(p).stem
-            try:
-                if ext in ['.s1p', '.s2p', '.s3p']:
-                    ntw_full = d.get('ntwk_full')
-                    if ntw_full is None:
-                        ntw_full = loadFile(p)
-                        d['ntwk_full'] = ntw_full
-                    sRaw = getattr(ntw_full, prm)
-                    sGate = sRaw.time_gate(center=center, span=span)
-                    freq = ntw_full.f
-                    arr = sGate.s_db.flatten()
-                    plt.plot(freq, arr, label=lbl)
-                    legTG.append(lbl)
-            except Exception:
-                pass
-        plt.ylabel(f"{prm.upper()} [dB]")
-        plt.xlabel("Frequency [Hz]")
-        plt.title(f"{prm.upper()} (frequency domain - gated)")
-        plt.grid(True)
-        if legTG:
-            plt.legend(loc="upper right")
-        plt.tight_layout()
-        plt.show()
+        self._updateLegendPanel(legend_items, 'regex')
 
     def _onTab(self, e):
         tabTxt = self.nb.tab(self.nb.select(), "text")
@@ -910,7 +967,9 @@ class App(tk.Tk):
                 v = tk.BooleanVar(value=True)
                 chk = ttk.Checkbutton(self.fbox, text=Path(p).name, variable=v, command=self._updAll)
                 chk.pack(anchor="w")
-                self.fls.append((v, p, {}))
+                chk.bind("<Button-3>", lambda e, path=p: self._showStyleMenu(e, path))
+                d = {'line_color': None, 'line_width': 1.0}
+                self.fls.append((v, p, d))
         self.fileListCanvas.configure(scrollregion=self.fileListCanvas.bbox("all"))
         self._updAll()
 
@@ -966,18 +1025,25 @@ class App(tk.Tk):
                         d['ntwk'] = None
                     else:
                         continue
-                    ax.plot(fr, arr, label=lbl)
-                    leg.append(lbl)
+                    
+                    line_kwargs = {'label': lbl}
+                    if d.get('line_color'):
+                        line_kwargs['color'] = d['line_color']
+                    if d.get('line_width', 1.0) != 1.0:
+                        line_kwargs['linewidth'] = d['line_width']
+                    
+                    line = ax.plot(fr, arr, **line_kwargs)[0]
+                    leg.append((lbl, line.get_color()))
                 except Exception:
                     pass
             ax.set_ylabel(f"|{prm.upper()}| [dB]")
             ax.set_title(f"{prm.upper()} magnitude")
             ax.grid(True)
-            if leg:
-                ax.legend(loc="upper right")
         axes[-1].set_xlabel("Frequency [Hz]")
         self.fig.tight_layout(rect=[0, 0, 1, 1])
         self.cv.draw()
+        
+        self._updateLegendPanel(leg)
 
     def _updTPlot(self):
         self.figT.clf()
@@ -993,6 +1059,9 @@ class App(tk.Tk):
         legF = []
         legTR = []
         legTG = []
+        legend_items = []  
+        legend_colors = {}  
+        
         for v, p, d in self.fls:
             if not v.get(): continue
             ext = Path(p).suffix.lower()
@@ -1006,25 +1075,44 @@ class App(tk.Tk):
                     
                     arr = getattr(ntw_full, prm).s_db.flatten()
                     fr = ntw_full.f
-                    axF.plot(fr, arr, label=lbl)
+                    
+                    line_kwargs = {'label': lbl}
+                    if d.get('line_color'):
+                        line_kwargs['color'] = d['line_color']
+                    if d.get('line_width', 1.0) != 1.0:
+                        line_kwargs['linewidth'] = d['line_width']
+                    
+                    line = axF.plot(fr, arr, **line_kwargs)[0]
                     legF.append(lbl)
+                    legend_colors[lbl] = line.get_color()
+                    
                 elif ext == '.csv' and prm == 's11':
                     if 'csv_data' not in d:
                         df = pd.read_csv(p)
                         d['csv_data'] = (df.iloc[:,0].values, df.iloc[:,1].values)
                     fr, arr = d['csv_data']
-                    axF.plot(fr, arr, label=lbl)
+                    
+                    line_kwargs = {'label': lbl}
+                    if d.get('line_color'):
+                        line_kwargs['color'] = d['line_color']
+                    if d.get('line_width', 1.0) != 1.0:
+                        line_kwargs['linewidth'] = d['line_width']
+                    
+                    line = axF.plot(fr, arr, **line_kwargs)[0]
                     legF.append(lbl)
+                    legend_colors[lbl] = line.get_color()
             except Exception:
                 pass
+        
         axF.set_ylabel(f"|{prm.upper()}| [dB]")
         axF.set_title(f"{prm.upper()} (frequency domain - raw)")
         axF.grid(True)
-        if legF:
-            axF.legend(loc="upper right")
-        else:
+        if axF.get_legend():
+            axF.get_legend().remove()
+        if not legF:
             axF.text(0.5, 0.5, "Brak danych", ha="center", va="center", color="gray")
             axF.set_xticks([]); axF.set_yticks([])
+        
         for v, p, d in self.fls:
             if not v.get(): continue
             ext = Path(p).suffix.lower()
@@ -1036,22 +1124,34 @@ class App(tk.Tk):
                         ntw_full = loadFile(p)
                         d['ntwk_full'] = ntw_full
                     
-                    getattr(ntw_full, prm).plot_s_db_time(ax=axTR, label=lbl)
+                    if lbl in legend_colors:
+                        color = legend_colors[lbl]
+                        original_plot = getattr(ntw_full, prm).plot_s_db_time(ax=axTR, label=lbl)
+                        if hasattr(original_plot, '__iter__') and len(original_plot) > 0:
+                            original_plot[0].set_color(color)
+                    else:
+                        getattr(ntw_full, prm).plot_s_db_time(ax=axTR, label=lbl)
+                        lines = axTR.get_lines()
+                        if lines and lbl not in legend_colors:
+                            legend_colors[lbl] = lines[-1].get_color()
+                    
                     legTR.append(lbl)
             except Exception:
                 pass
+        
         axTR.set_ylabel(f"{prm.upper()} TD [dB]")
         axTR.set_xlabel("Czas [ns]")
         axTR.set_title(f"{prm.upper()} (time domain - raw)")
         axTR.grid(True)
         axTR.set_xlim(0, 50)
-        if legTR:
-            axTR.legend(loc="upper right")
-        else:
+        if axTR.get_legend():
+            axTR.get_legend().remove()
+        if not legTR:
             axTR.plot([0, 30], [0, 0], alpha=0)
             axTR.text(0.5, 0.5, "Brak danych / Placeholder", ha="center", va="center", color="gray", transform=axTR.transAxes)
             axTR.set_xticks(np.linspace(0, 30, 7))
             axTR.set_yticks([])
+        
         if doGate:
             for v, p, d in self.fls:
                 if not v.get(): continue
@@ -1068,21 +1168,42 @@ class App(tk.Tk):
                         sGate = sRaw.time_gate(center=center, span=span)
                         freq = ntw_full.f
                         arr = sGate.s_db.flatten()
-                        axTG.plot(freq, arr, label=lbl)
+                        
+                        line_kwargs = {'label': lbl}
+                        if d.get('line_color'):
+                            line_kwargs['color'] = d['line_color']
+                        elif lbl in legend_colors:
+                            line_kwargs['color'] = legend_colors[lbl]
+                        if d.get('line_width', 1.0) != 1.0:
+                            line_kwargs['linewidth'] = d['line_width']
+                        
+                        line = axTG.plot(freq, arr, **line_kwargs)[0]
                         legTG.append(lbl)
+                        
+                        if lbl not in legend_colors:
+                            legend_colors[lbl] = line.get_color()
                 except Exception:
                     pass
+        
         axTG.set_ylabel(f"{prm.upper()} [dB]")
         axTG.set_xlabel("Frequency [Hz]")
         axTG.set_title(f"{prm.upper()} (frequency domain - gated)")
         axTG.grid(True)
-        if legTG:
-            axTG.legend(loc="upper right")
-        else:
+        if axTG.get_legend():
+            axTG.get_legend().remove()
+        if not legTG:
             axTG.text(0.5, 0.5, "Brak danych / Placeholder", ha="center", va="center", color="gray", transform=axTG.transAxes)
             axTG.set_xticks([]); axTG.set_yticks([])
+        
         self.figT.tight_layout()
         self.cvT.draw()
+        
+        all_files = set(legF + legTR + legTG)
+        for lbl in sorted(all_files):
+            if lbl in legend_colors:
+                legend_items.append((lbl, legend_colors[lbl]))
+        
+        self._updateLegendPanel(legend_items, 'time')
 
     def _clearM(self, upd=False):
         for m in self.mrk:
@@ -1263,8 +1384,13 @@ class App(tk.Tk):
                 widget.destroy()
             
             for v, p, d in self.fls:
+                v = tk.BooleanVar(value=True)
                 chk = ttk.Checkbutton(self.fbox, text=Path(p).name, variable=v, command=self._updAll)
                 chk.pack(anchor="w")
+                chk.bind("<Button-3>", lambda e, path=p: self._showStyleMenu(e, path))
+                d['line_color'] = None  
+                d['line_width'] = 1.0
+                self.fls.append((v, p, d))
             
             self.fileListCanvas.configure(scrollregion=self.fileListCanvas.bbox("all"))
             self._updAll()
@@ -2167,7 +2293,161 @@ class App(tk.Tk):
             self.txt.insert(tk.END, f"\nWARNING: Only {valid_files} training files found.\n")
             self.txt.insert(tk.END, "Consider adding more data for better model performance.\n")
         
-        self.txt.config(state=tk.DISABLED)
+            self.txt.config(state=tk.DISABLED)
+
+    def _toggleLegend(self):
+        if self.legendVisible.get():
+            self.plotPane.add(self.legendFrame, weight=1)
+            self.plotPaneT.add(self.legendFrameT, weight=1)
+            self.plotPaneR.add(self.legendFrameR, weight=1)
+        else:
+            self.plotPane.forget(self.legendFrame)
+            self.plotPaneT.forget(self.legendFrameT)
+            self.plotPaneR.forget(self.legendFrameR)
+    
+    def _updateLegendPanel(self, legend_items, tab='freq'):
+        if tab == 'freq':
+            legendFrame = self.legendItemsFrame
+            legendCanvas = self.legendCanvas
+        elif tab == 'time':
+            legendFrame = self.legendItemsFrameT
+            legendCanvas = self.legendCanvasT
+        elif tab == 'regex':
+            legendFrame = self.legendItemsFrameR
+            legendCanvas = self.legendCanvasR
+        else:
+            return
+        
+        for widget in legendFrame.winfo_children():
+            widget.destroy()
+        
+        if not legend_items:
+            ttk.Label(legendFrame, text="No data", foreground="gray").pack(pady=10)
+            return
+        
+        for name, color in legend_items:
+            frame = ttk.Frame(legendFrame)
+            frame.pack(fill=tk.X, padx=5, pady=2)
+            
+            colorLabel = tk.Label(frame, text="■", foreground=color, font=("", 12))
+            colorLabel.pack(side=tk.LEFT, padx=(0, 5))
+            
+            displayName = name if len(name) <= 20 else name[:17] + "..."
+            ttk.Label(frame, text=displayName, font=("", 9)).pack(side=tk.LEFT)
+        
+        legendCanvas.configure(scrollregion=legendCanvas.bbox("all"))
+    
+    def _showStyleMenu(self, event, filepath):
+        file_data = None
+        for v, p, d in self.fls:
+            if p == filepath:
+                file_data = d
+                break
+        
+        if file_data is None:
+            return
+        
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label="Edit line style...", 
+                        command=lambda: self._editLineStyle(filepath, file_data))
+        
+        menu.post(event.x_root, event.y_root)
+    
+    def _editLineStyle(self, filepath, file_data):
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Edit style: {Path(filepath).name}")
+        dialog.geometry("350x300")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        current_color = file_data.get('line_color')
+        if current_color:
+            try:
+                rgb = matplotlib.colors.to_rgb(current_color)
+                r, g, b = [int(x * 255) for x in rgb]
+            except:
+                r, g, b = 128, 128, 128
+        else:
+            r, g, b = 128, 128, 128
+        
+        ttk.Label(dialog, text="Color (RGB):", font=("", 10, "bold")).grid(row=0, column=0, columnspan=2, padx=10, pady=(10,5), sticky="w")
+        
+        ttk.Label(dialog, text="Red:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        redVar = tk.IntVar(value=r)
+        redSlider = ttk.Scale(dialog, from_=0, to=255, variable=redVar, orient=tk.HORIZONTAL, length=200)
+        redSlider.grid(row=1, column=1, padx=10, pady=5)
+        redValue = ttk.Label(dialog, text=str(r), width=4)
+        redValue.grid(row=1, column=2, padx=5, pady=5)
+        
+        ttk.Label(dialog, text="Green:").grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        greenVar = tk.IntVar(value=g)
+        greenSlider = ttk.Scale(dialog, from_=0, to=255, variable=greenVar, orient=tk.HORIZONTAL, length=200)
+        greenSlider.grid(row=2, column=1, padx=10, pady=5)
+        greenValue = ttk.Label(dialog, text=str(g), width=4)
+        greenValue.grid(row=2, column=2, padx=5, pady=5)
+        
+        ttk.Label(dialog, text="Blue:").grid(row=3, column=0, padx=10, pady=5, sticky="w")
+        blueVar = tk.IntVar(value=b)
+        blueSlider = ttk.Scale(dialog, from_=0, to=255, variable=blueVar, orient=tk.HORIZONTAL, length=200)
+        blueSlider.grid(row=3, column=1, padx=10, pady=5)
+        blueValue = ttk.Label(dialog, text=str(b), width=4)
+        blueValue.grid(row=3, column=2, padx=5, pady=5)
+        
+        ttk.Label(dialog, text="Line width:").grid(row=4, column=0, padx=10, pady=(15,5), sticky="w")
+        widthVar = tk.DoubleVar(value=file_data.get('line_width', 1.0))
+        widthSpin = ttk.Spinbox(dialog, from_=0.5, to=5.0, increment=0.5, textvariable=widthVar, width=10)
+        widthSpin.grid(row=4, column=1, padx=10, pady=(15,5), sticky="w")
+        
+        ttk.Label(dialog, text="Preview:").grid(row=5, column=0, padx=10, pady=(15,5), sticky="w")
+        previewFrame = ttk.Frame(dialog, relief=tk.SUNKEN, borderwidth=2)
+        previewFrame.grid(row=5, column=1, padx=10, pady=(15,5), sticky="ew")
+        previewLabel = tk.Label(previewFrame, text="━━━━━━━━━", font=("", 14), background="white")
+        previewLabel.pack(padx=20, pady=10)
+        
+        def updatePreview(*args):
+            r = redVar.get()
+            g = greenVar.get()
+            b = blueVar.get()
+            redValue.config(text=str(r))
+            greenValue.config(text=str(g))
+            blueValue.config(text=str(b))
+            
+            hex_color = f'#{r:02x}{g:02x}{b:02x}'
+            width = int(widthVar.get() * 2)
+            previewLabel.config(foreground=hex_color, font=("", 10 + width))
+        
+        redVar.trace('w', updatePreview)
+        greenVar.trace('w', updatePreview)
+        blueVar.trace('w', updatePreview)
+        widthVar.trace('w', updatePreview)
+        updatePreview()
+        
+        buttonFrame = ttk.Frame(dialog)
+        buttonFrame.grid(row=6, column=0, columnspan=3, pady=20)
+        
+        def apply():
+            r = redVar.get()
+            g = greenVar.get()
+            b = blueVar.get()
+            file_data['line_color'] = f'#{r:02x}{g:02x}{b:02x}'
+            file_data['line_width'] = widthVar.get()
+            dialog.destroy()
+            self._updAll()
+        
+        def reset_default():
+            file_data['line_color'] = None
+            file_data['line_width'] = 1.0
+            dialog.destroy()
+            self._updAll()
+        
+        ttk.Button(buttonFrame, text="Apply", command=apply).pack(side=tk.LEFT, padx=5)
+        ttk.Button(buttonFrame, text="Reset to Default", command=reset_default).pack(side=tk.LEFT, padx=5)
+        ttk.Button(buttonFrame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
 
 if __name__ == "__main__":
     App().mainloop()
