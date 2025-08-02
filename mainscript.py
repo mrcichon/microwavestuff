@@ -684,18 +684,22 @@ class App(tk.Tk):
             
             try:
                 if ext in ['.s1p', '.s2p', '.s3p']:
-                    ntw = loadFile(p)
+                    # Use cache
+                    ntw_full = d.get('ntwk_full')
+                    if ntw_full is None:
+                        ntw_full = loadFile(p)
+                        d['ntwk_full'] = ntw_full
                     
                     if self.regexGateChk.get():
                         center = self.gateCenter.get()
                         span = self.gateSpan.get()
-                        s_param = getattr(ntw, param)
+                        s_param = getattr(ntw_full, param)
                         s_gated = s_param.time_gate(center=center, span=span)
-                        freq = ntw.f
+                        freq = ntw_full.f
                         s_db = s_gated.s_db.flatten()
                     else:
-                        freq = ntw.f
-                        s_db = getattr(ntw, param).s_db.flatten()
+                        freq = ntw_full.f
+                        s_db = getattr(ntw_full, param).s_db.flatten()
                     
                     files_data.append((fname, value, freq, s_db))
             except:
@@ -772,10 +776,14 @@ class App(tk.Tk):
             lbl = Path(p).stem
             try:
                 if ext in ['.s1p', '.s2p', '.s3p']:
-                    ntw = loadFile(p)
-                    sRaw = getattr(ntw, prm)
+                    # Use cache
+                    ntw_full = d.get('ntwk_full')
+                    if ntw_full is None:
+                        ntw_full = loadFile(p)
+                        d['ntwk_full'] = ntw_full
+                    sRaw = getattr(ntw_full, prm)
                     sGate = sRaw.time_gate(center=center, span=span)
-                    freq = ntw.f
+                    freq = ntw_full.f
                     arr = sGate.s_db.flatten()
                     plt.plot(freq, arr, label=lbl)
                     legTG.append(lbl)
@@ -934,14 +942,31 @@ class App(tk.Tk):
                 lbl = Path(p).stem
                 try:
                     if ext in ['.s1p', '.s2p', '.s3p']:
-                        ntw = loadFile(p)[sstr]
-                        d['ntwk'] = ntw
+                        # Check cache first
+                        ntw_full = d.get('ntwk_full')
+                        cached_range = d.get('cached_range')
+                        
+                        if ntw_full is None:
+                            # Load and cache full network
+                            ntw_full = loadFile(p)
+                            d['ntwk_full'] = ntw_full
+                        
+                        # Slice to frequency range
+                        if cached_range != sstr:
+                            ntw = ntw_full[sstr]
+                            d['ntwk'] = ntw
+                            d['cached_range'] = sstr
+                        else:
+                            ntw = d['ntwk']
+                        
                         arr = getattr(ntw, prm).s_db.flatten()
                         fr = ntw.f
                     elif ext == '.csv' and prm == 's11':
-                        df = pd.read_csv(p)
-                        fr = df.iloc[:,0].values
-                        arr = df.iloc[:,1].values
+                        # CSV files can't be cached as Network objects
+                        if 'csv_data' not in d:
+                            df = pd.read_csv(p)
+                            d['csv_data'] = (df.iloc[:,0].values, df.iloc[:,1].values)
+                        fr, arr = d['csv_data']
                         d['ntwk'] = None
                     else:
                         continue
@@ -978,15 +1003,21 @@ class App(tk.Tk):
             lbl = Path(p).stem
             try:
                 if ext in ['.s1p', '.s2p', '.s3p']:
-                    ntw = loadFile(p)
-                    arr = getattr(ntw, prm).s_db.flatten()
-                    fr = ntw.f
+                    # Use cache
+                    ntw_full = d.get('ntwk_full')
+                    if ntw_full is None:
+                        ntw_full = loadFile(p)
+                        d['ntwk_full'] = ntw_full
+                    
+                    arr = getattr(ntw_full, prm).s_db.flatten()
+                    fr = ntw_full.f
                     axF.plot(fr, arr, label=lbl)
                     legF.append(lbl)
                 elif ext == '.csv' and prm == 's11':
-                    df = pd.read_csv(p)
-                    fr = df.iloc[:,0].values
-                    arr = df.iloc[:,1].values
+                    if 'csv_data' not in d:
+                        df = pd.read_csv(p)
+                        d['csv_data'] = (df.iloc[:,0].values, df.iloc[:,1].values)
+                    fr, arr = d['csv_data']
                     axF.plot(fr, arr, label=lbl)
                     legF.append(lbl)
             except Exception:
@@ -1005,8 +1036,13 @@ class App(tk.Tk):
             lbl = Path(p).stem
             try:
                 if ext in ['.s1p', '.s2p', '.s3p']:
-                    ntw = loadFile(p)
-                    getattr(ntw, prm).plot_s_db_time(ax=axTR, label=lbl)
+                    # Use cache
+                    ntw_full = d.get('ntwk_full')
+                    if ntw_full is None:
+                        ntw_full = loadFile(p)
+                        d['ntwk_full'] = ntw_full
+                    
+                    getattr(ntw_full, prm).plot_s_db_time(ax=axTR, label=lbl)
                     legTR.append(lbl)
             except Exception:
                 pass
@@ -1029,10 +1065,15 @@ class App(tk.Tk):
                 lbl = Path(p).stem
                 try:
                     if ext in ['.s1p', '.s2p', '.s3p']:
-                        ntw = loadFile(p)
-                        sRaw = getattr(ntw, prm)
+                        # Use cache
+                        ntw_full = d.get('ntwk_full')
+                        if ntw_full is None:
+                            ntw_full = loadFile(p)
+                            d['ntwk_full'] = ntw_full
+                        
+                        sRaw = getattr(ntw_full, prm)
                         sGate = sRaw.time_gate(center=center, span=span)
-                        freq = ntw.f
+                        freq = ntw_full.f
                         arr = sGate.s_db.flatten()
                         axTG.plot(freq, arr, label=lbl)
                         legTG.append(lbl)
@@ -1450,7 +1491,21 @@ class App(tk.Tk):
                 continue
                 
             try:
-                ntw = loadFile(p)[sstr]
+                # Use cache
+                ntw_full = d.get('ntwk_full')
+                cached_range = d.get('cached_range')
+                
+                if ntw_full is None:
+                    ntw_full = loadFile(p)
+                    d['ntwk_full'] = ntw_full
+                
+                if cached_range != sstr:
+                    ntw = ntw_full[sstr]
+                    d['ntwk'] = ntw
+                    d['cached_range'] = sstr
+                else:
+                    ntw = d['ntwk']
+                
                 if freq_ref is None:
                     freq_ref = ntw.f
                 elif len(ntw.f) != len(freq_ref) or not np.allclose(ntw.f, freq_ref, rtol=1e-6):
