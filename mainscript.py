@@ -684,7 +684,6 @@ class App(tk.Tk):
             
             try:
                 if ext in ['.s1p', '.s2p', '.s3p']:
-                    # Use cache
                     ntw_full = d.get('ntwk_full')
                     if ntw_full is None:
                         ntw_full = loadFile(p)
@@ -776,7 +775,6 @@ class App(tk.Tk):
             lbl = Path(p).stem
             try:
                 if ext in ['.s1p', '.s2p', '.s3p']:
-                    # Use cache
                     ntw_full = d.get('ntwk_full')
                     if ntw_full is None:
                         ntw_full = loadFile(p)
@@ -814,6 +812,7 @@ class App(tk.Tk):
             for txt in self.mtxt:
                 self.txt.insert(tk.END, txt)
             self.txt.config(state=tk.DISABLED)
+            self._updPlot()  
         elif tabTxt == "Time domain":
             self.tab = "time"
             self.cbox.pack_forget()
@@ -828,6 +827,7 @@ class App(tk.Tk):
             for txt in self.mtxt:
                 self.txt.insert(tk.END, txt)
             self.txt.config(state=tk.DISABLED)
+            self._updTPlot()  
         elif tabTxt == "Regex Highlighting":
             self.tab = "regex"
             self.cbox.pack_forget()
@@ -942,16 +942,13 @@ class App(tk.Tk):
                 lbl = Path(p).stem
                 try:
                     if ext in ['.s1p', '.s2p', '.s3p']:
-                        # Check cache first
                         ntw_full = d.get('ntwk_full')
                         cached_range = d.get('cached_range')
                         
                         if ntw_full is None:
-                            # Load and cache full network
                             ntw_full = loadFile(p)
                             d['ntwk_full'] = ntw_full
                         
-                        # Slice to frequency range
                         if cached_range != sstr:
                             ntw = ntw_full[sstr]
                             d['ntwk'] = ntw
@@ -962,7 +959,6 @@ class App(tk.Tk):
                         arr = getattr(ntw, prm).s_db.flatten()
                         fr = ntw.f
                     elif ext == '.csv' and prm == 's11':
-                        # CSV files can't be cached as Network objects
                         if 'csv_data' not in d:
                             df = pd.read_csv(p)
                             d['csv_data'] = (df.iloc[:,0].values, df.iloc[:,1].values)
@@ -1003,7 +999,6 @@ class App(tk.Tk):
             lbl = Path(p).stem
             try:
                 if ext in ['.s1p', '.s2p', '.s3p']:
-                    # Use cache
                     ntw_full = d.get('ntwk_full')
                     if ntw_full is None:
                         ntw_full = loadFile(p)
@@ -1036,7 +1031,6 @@ class App(tk.Tk):
             lbl = Path(p).stem
             try:
                 if ext in ['.s1p', '.s2p', '.s3p']:
-                    # Use cache
                     ntw_full = d.get('ntwk_full')
                     if ntw_full is None:
                         ntw_full = loadFile(p)
@@ -1065,7 +1059,6 @@ class App(tk.Tk):
                 lbl = Path(p).stem
                 try:
                     if ext in ['.s1p', '.s2p', '.s3p']:
-                        # Use cache
                         ntw_full = d.get('ntwk_full')
                         if ntw_full is None:
                             ntw_full = loadFile(p)
@@ -1104,13 +1097,17 @@ class App(tk.Tk):
             self.txt.config(state=tk.NORMAL)
             self.txt.delete(1.0, tk.END)
             self.txt.config(state=tk.DISABLED)
-        self.cv.draw()
-        self.cvT.draw()
+        if self.tab == "freq":
+            self.cv.draw()
+        elif self.tab == "time":
+            self.cvT.draw()
 
     def _updAll(self):
-        self._updPlot()
-        self._updTPlot()
-        if self.tab == "regex":
+        if self.tab == "freq":
+            self._updPlot()
+        elif self.tab == "time":
+            self._updTPlot()
+        elif self.tab == "regex":
             self._updRegexPlot()
         elif self.tab == "overlap":
             self._updOverlapPlot()
@@ -1491,7 +1488,6 @@ class App(tk.Tk):
                 continue
                 
             try:
-                # Use cache
                 ntw_full = d.get('ntwk_full')
                 cached_range = d.get('cached_range')
                 
