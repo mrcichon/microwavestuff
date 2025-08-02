@@ -118,6 +118,9 @@ class App(tk.Tk):
         self.trainDevice = tk.StringVar(value="cpu")
         self.modelTrainingAvailable = False
         
+        self.markersEnabled = tk.BooleanVar(value=True)
+        self.markersEnabledTime = tk.BooleanVar(value=True)
+        
         try:
             import water_pred
             import torch
@@ -212,11 +215,13 @@ class App(tk.Tk):
         for n, v in (("s11", self.s11), ("s22", self.s22), ("s12", self.s12), ("s21", self.s21)):
             chk = ttk.Checkbutton(self.cbox, text=n.upper(), variable=v, command=self._updAll)
             chk.pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(self.cbox, text="Enable markers", variable=self.markersEnabled).pack(side=tk.LEFT, padx=(20,2))
         self.rbox = ttk.Frame(lfrm)
         ttk.Label(self.rbox, text="Wybierz TDG:").pack(side=tk.LEFT)
         for n in ("s11", "s12", "s21", "s22"):
             rb = ttk.Radiobutton(self.rbox, text=n.upper(), value=n, variable=self.td, command=self._updAll)
             rb.pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(self.rbox, text="Enable markers", variable=self.markersEnabledTime).pack(side=tk.LEFT, padx=(20,2))
         self.gateBox = ttk.Frame(lfrm)
         self.gateCheck = ttk.Checkbutton(self.gateBox, text="Gating", variable=self.gateChk, command=self._updAll)
         self.gateCheck.pack(side=tk.LEFT, padx=3)
@@ -1053,6 +1058,10 @@ class App(tk.Tk):
         doGate = self.gateChk.get()
         axes = self.figT.subplots(3, 1, sharex=False)
         self.tax = list(axes)
+        
+        for ax in axes:
+            ax.set_navigate(True)
+        
         axF = axes[0]
         axTR = axes[1]
         axTG = axes[2]
@@ -1236,6 +1245,11 @@ class App(tk.Tk):
             self._updVariancePlot()
 
     def _onClick(self, ev):
+        if self.tab == "freq" and not self.markersEnabled.get():
+            return
+        elif self.tab == "time" and not self.markersEnabledTime.get():
+            return
+            
         if getattr(self, "_blkNext", False):
             self._blkNext = False
             return
