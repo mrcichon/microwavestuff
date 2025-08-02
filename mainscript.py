@@ -757,6 +757,9 @@ class App(tk.Tk):
         
         pattern = self.regexPattern.get()
         param = self.regexParam.get()
+        fmin = self.fmin.get()
+        fmax = self.fmax.get()
+        sstr = f"{fmin}-{fmax}ghz"
         
         self.regexSpans = []
         
@@ -785,18 +788,20 @@ class App(tk.Tk):
                         ntw_full = loadFile(p)
                         d['ntwk_full'] = ntw_full
                     
+                    ntw = ntw_full[sstr]
+                    
                     if self.regexGateChk.get():
                         center = self.gateCenter.get()
                         span = self.gateSpan.get()
-                        s_param = getattr(ntw_full, param)
+                        s_param = getattr(ntw, param)
                         s_gated = s_param.time_gate(center=center, span=span)
-                        freq = ntw_full.f
+                        freq = ntw.f
                         s_db = s_gated.s_db.flatten()
                     else:
-                        freq = ntw_full.f
-                        s_db = getattr(ntw_full, param).s_db.flatten()
+                        freq = ntw.f
+                        s_db = getattr(ntw, param).s_db.flatten()
                     
-                    files_data.append((fname, value, freq, s_db))
+                    files_data.append((fname, value, freq, s_db, d))
             except:
                 pass
         
@@ -805,6 +810,7 @@ class App(tk.Tk):
         self.txt.config(state=tk.NORMAL)
         self.txt.delete(1.0, tk.END)
         self.txt.insert(tk.END, f"Regex: {pattern} (group {self.regexGroup.get()})\n")
+        self.txt.insert(tk.END, f"Frequency range: {fmin}-{fmax} GHz\n")
         if self.regexGateChk.get():
             self.txt.insert(tk.END, f"Gating: {self.gateCenter.get()}±{self.gateSpan.get()/2} ns\n")
         if self.regexHighlightChk.get():
@@ -827,17 +833,30 @@ class App(tk.Tk):
             self.cvR.draw()
             return
         
-        ranges, freqs, s_matrix, labels, small_diff_ranges = self._analyzeOrderedRanges(files_data)
+        analysis_data = [(d[0], d[1], d[2], d[3]) for d in files_data]
+        ranges, freqs, s_matrix, labels, small_diff_ranges = self._analyzeOrderedRanges(analysis_data)
         self.regexRanges = ranges
-        
-        colors = plt.cm.viridis(np.linspace(0, 1, len(labels)))
         
         self.regexLines = []
         legend_items = []
-        for i, (s_data, label) in enumerate(zip(s_matrix, labels)):
-            line, = self.axR.plot(freqs, s_data, label=label, color=colors[i])
+        
+        files_data.sort(key=lambda x: x[1])
+        
+        for i, (fname, value, freq, s_data, file_dict) in enumerate(files_data):
+            line_kwargs = {'label': fname}
+            
+            if file_dict.get('line_color'):
+                line_kwargs['color'] = file_dict['line_color']
+            else:
+                colors = plt.cm.viridis(np.linspace(0, 1, len(files_data)))
+                line_kwargs['color'] = colors[i]
+            
+            if file_dict.get('line_width', 1.0) != 1.0:
+                line_kwargs['linewidth'] = file_dict['line_width']
+            
+            line, = self.axR.plot(freq, s_data, **line_kwargs)
             self.regexLines.append(line)
-            legend_items.append((label, matplotlib.colors.to_hex(colors[i])))
+            legend_items.append((fname, matplotlib.colors.to_hex(line.get_color())))
         
         if self.regexHighlightChk.get():
             for (f1, f2) in ranges:
@@ -1064,6 +1083,10 @@ class App(tk.Tk):
         center = self.gateCenter.get()
         span = self.gateSpan.get()
         doGate = self.gateChk.get()
+        fmin = self.fmin.get()
+        fmax = self.fmax.get()
+        sstr = f"{fmin}-{fmax}ghz"
+        
         axes = self.figT.subplots(3, 1, sharex=False)
         self.tax = list(axes)
         
@@ -1086,12 +1109,21 @@ class App(tk.Tk):
             try:
                 if ext in ['.s1p', '.s2p', '.s3p']:
                     ntw_full = d.get('ntwk_full')
+                    cached_range = d.get('cached_range')
+                    
                     if ntw_full is None:
                         ntw_full = loadFile(p)
                         d['ntwk_full'] = ntw_full
                     
-                    arr = getattr(ntw_full, prm).s_db.flatten()
-                    fr = ntw_full.f
+                    if cached_range != sstr:
+                        ntw = ntw_full[sstr]
+                        d['ntwk'] = ntw
+                        d['cached_range'] = sstr
+                    else:
+                        ntw = d['ntwk']
+                    
+                    arr = getattr(ntw, prm).s_db.flatten()
+                    fr = ntw.f
                     
                     line_kwargs = {'label': lbl}
                     if d.get('line_color'):
@@ -1108,6 +1140,10 @@ class App(tk.Tk):
                         df = pd.read_csv(p)
                         d['csv_data'] = (df.iloc[:,0].values, df.iloc[:,1].values)
                     fr, arr = d['csv_data']
+                    
+                    mask = (fr >= fmin * 1e9) & (fr <= fmax * 1e9)
+                    fr = fr[mask]
+                    arr = arr[mask]
                     
                     line_kwargs = {'label': lbl}
                     if d.get('line_color'):
@@ -1141,18 +1177,25 @@ class App(tk.Tk):
                         ntw_full = loadFile(p)
                         d['ntwk_full'] = ntw_full
                     
-                    if lbl in legend_colors:
-                        color = legend_colors[lbl]
-                        original_plot = getattr(ntw_full, prm).plot_s_db_time(ax=axTR, label=lbl)
-                        if hasattr(original_plot, '__iter__') and len(original_plot) > 0:
-                            original_plot[0].set_color(color)
-                    else:
-                        getattr(ntw_full, prm).plot_s_db_time(ax=axTR, label=lbl)
-                        lines = axTR.get_lines()
-                        if lines and lbl not in legend_colors:
-                            legend_colors[lbl] = lines[-1].get_color()
+                    ntw = ntw_full[sstr]
                     
+                    s_param = getattr(ntw, prm)
+                    t_ns = s_param.frequency.t_ns
+                    s_time_db = s_param.s_time_db.flatten()
+                    
+                    line_kwargs = {'label': lbl}
+                    if d.get('line_color'):
+                        line_kwargs['color'] = d['line_color']
+                    elif lbl in legend_colors:
+                        line_kwargs['color'] = legend_colors[lbl]
+                    if d.get('line_width', 1.0) != 1.0:
+                        line_kwargs['linewidth'] = d['line_width']
+                    
+                    line = axTR.plot(t_ns, s_time_db, **line_kwargs)[0]
                     legTR.append(lbl)
+                    
+                    if lbl not in legend_colors:
+                        legend_colors[lbl] = line.get_color()
             except Exception:
                 pass
         
@@ -1181,9 +1224,11 @@ class App(tk.Tk):
                             ntw_full = loadFile(p)
                             d['ntwk_full'] = ntw_full
                         
-                        sRaw = getattr(ntw_full, prm)
+                        ntw = ntw_full[sstr]
+                        
+                        sRaw = getattr(ntw, prm)
                         sGate = sRaw.time_gate(center=center, span=span)
-                        freq = ntw_full.f
+                        freq = ntw.f
                         arr = sGate.s_db.flatten()
                         
                         line_kwargs = {'label': lbl}
@@ -2320,7 +2365,7 @@ class App(tk.Tk):
             self.txt.insert(tk.END, f"\nWARNING: Only {valid_files} training files found.\n")
             self.txt.insert(tk.END, "Consider adding more data for better model performance.\n")
         
-            self.txt.config(state=tk.DISABLED)
+        self.txt.config(state=tk.DISABLED)
 
     def _toggleLegend(self):
         if self.legendVisible.get():
