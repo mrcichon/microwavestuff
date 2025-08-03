@@ -15,6 +15,43 @@ import tempfile
 import numpy as np
 import re
 from itertools import combinations, cycle
+from scipy import signal
+from scipy.ndimage import convolve1d
+
+# work in progress, tak wiem że to bardzo łopatologiczne rozwiązanie
+def patch_time_gate_v017():
+    if rf.__version__.startswith('0.17'): return
+    
+    def tg(ntwk, center, span):
+        c, s = center * 1e-9, span * 1e-9
+        t = np.linspace(-0.5, 0.5, ntwk.frequency.npoints) / ntwk.frequency.step
+        
+        i0 = np.argmin(np.abs(t - (c - s/2)))
+        i1 = np.argmin(np.abs(t - (c + s/2)))
+
+        
+        if i0 >= i1:
+            i0, i1 = min(i0, i1), max(i0, i1) + 1
+        
+        win = signal.windows.kaiser(i1 - i0, 6)
+        gate = np.r_[np.zeros(i0), win, np.zeros(len(t) - i1)]
+        
+        k = np.fft.ifftshift(np.fft.fft(np.fft.fftshift(gate, axes=0), axis=0))
+        k = np.abs(k).flatten()
+        if k.sum() == 0:
+            k = np.ones_like(k) / len(k)
+        else:
+            k /= k.sum()
+        
+        out = ntwk.copy()
+        out.s[:,0,0] = convolve1d(out.s[:,0,0].real, k, mode='reflect') + \
+                       1j * convolve1d(out.s[:,0,0].imag, k, mode='reflect')
+        return out
+    
+    rf.Network.time_gate = lambda self, center, span, **_: tg(self, center, span)
+
+patch_time_gate_v017()
+
 
 MAXF = 4
 MINF = 0.4
@@ -795,6 +832,8 @@ class App(tk.Tk):
                         span = self.gateSpan.get()
                         s_param = getattr(ntw, param)
                         s_gated = s_param.time_gate(center=center, span=span)
+                        # s_gated = s_param.time_gate(center=center, span=span, t_unit='ns', method='convolution', conv_mode='reflect', window=('kaiser', 6))
+                        # s_gated = sRaw.time_gate(start=center-span/2, stop=center+span/2)
                         freq = ntw.f
                         s_db = s_gated.s_db.flatten()
                     else:
@@ -1227,6 +1266,7 @@ class App(tk.Tk):
                         ntw = ntw_full[sstr]
                         
                         sRaw = getattr(ntw, prm)
+                        # sGate = sRaw.time_gate(center=center, span=span, t_unit='ns', method='convolution', conv_mode='reflect', window=('kaiser', 6))
                         sGate = sRaw.time_gate(center=center, span=span)
                         freq = ntw.f
                         arr = sGate.s_db.flatten()
