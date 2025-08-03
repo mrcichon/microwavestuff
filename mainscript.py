@@ -19,53 +19,85 @@ from scipy import signal
 from scipy.ndimage import convolve1d
 
 # work in progress, tak wiem że to bardzo łopatologiczne rozwiązanie
+if rf.__version__ > "0.17.0":
 
-_orig_tg = None
-def debug_gate(self, center, span):
-    print(f"\n=== DEBUG GATE ===")
-    print(f"shape: {self.s.shape}, freq: {len(self.f)}, step: {self.frequency.step/1e6:.1f}MHz")
-    
-    c_s, s_s = center * 1e-9, span * 1e-9
-    t = np.linspace(-0.5/self.frequency.step, 0.5/self.frequency.step, self.frequency.npoints)
-    i0, i1 = np.argmin(np.abs(t - (c_s - s_s/2))), np.argmin(np.abs(t - (c_s + s_s/2)))
-    if i0 >= i1: i0, i1 = min(i0, i1), max(i0, i1) + 1
-    
-    print(f"gate: i0={i0}, i1={i1}, width={i1-i0}, total={len(t)}")
-    
-    gate = np.r_[np.zeros(i0), kaiser(i1 - i0, 6), np.zeros(len(t) - i1)]
-    print(f"gate sum: {gate.sum():.3f}, max: {gate.max():.3f}")
-    
-    k = np.abs(np.fft.ifftshift(np.fft.fft(np.fft.fftshift(gate)))).flatten()
-    print(f"kernel pre-norm: sum={k.sum():.3f}, max={k.max():.6f}, min={k.min():.6f}")
-    k = k / k.sum() if k.sum() else np.ones_like(k) / len(k)
-    print(f"kernel post-norm: sum={k.sum():.3f}, max={k.max():.6f}")
-    
-    s11_in = self.s[:, 0, 0]
-    print(f"s11 in: mean={np.mean(np.abs(s11_in)):.6f}, std={np.std(np.abs(s11_in)):.6f}")
-    print(f"s11 in dB: mean={np.mean(20*np.log10(np.abs(s11_in))):.1f}, std={np.std(20*np.log10(np.abs(s11_in))):.1f}")
-    
-    s11_out = convolve1d(s11_in.real, k, mode='reflect') + 1j * convolve1d(s11_in.imag, k, mode='reflect')
-    print(f"s11 out: mean={np.mean(np.abs(s11_out)):.6f}, std={np.std(np.abs(s11_out)):.6f}")
-    print(f"s11 out dB: mean={np.mean(20*np.log10(np.abs(s11_out))):.1f}, std={np.std(20*np.log10(np.abs(s11_out))):.1f}")
-    
-    if np.all(s11_out == 0): print("!!! OUTPUT IS ALL ZEROS")
-    if np.any(np.isnan(s11_out)): print("!!! OUTPUT HAS NANs")
-    if np.all(s11_in == s11_out): print("!!! NO CHANGE DETECTED")
-    
-    return tg(self, center, span)
+    def find_nearest_index(array, value):
+        return (np.abs(array-value)).argmin()
 
-def toggle_debug():
-    global _orig_tg
-    if _orig_tg is None:
-        _orig_tg = rf.Network.time_gate
-        rf.Network.time_gate = debug_gate
-        print("DEBUG ON")
-    else:
-        rf.Network.time_gate = _orig_tg
-        _orig_tg = None
-        print("DEBUG OFF")
+    def delay_v017(self, d, unit='deg', port=0, media=None, **kw):
+        if d == 0:
+            return self
+        d = d/2.
+        if self.nports > 2:
+            raise NotImplementedError('only implemented for 1 and 2 ports')
+        if media is None:
+            try:
+                from skrf.media import Freespace
+            except:
+                from skrf.media.freespace import Freespace
+            media = Freespace(frequency=self.frequency, z0=self.z0[:,port])
 
+        l = media.line(d=d, unit=unit, **kw)
+        print(f"DEBUG line: d={d}, unit={unit}, line.s21[0]={l.s[0,1,0]}")
 
+        return l**self
+
+    def time_gate_v017(self, center=None, span=None, **kwargs):
+        if self.nports > 1:
+            raise ValueError('Time-gating only works on one-ports')
+
+        window = kwargs.get('window', ('kaiser', 6))
+        mode = kwargs.get('mode', 'bandpass')
+        boundary = kwargs.get('boundary', 'reflect')
+        media = kwargs.get('media', None)
+
+        center_s = center * 1e-9
+        span_s = span * 1e-9
+        start = center_s - span_s/2.
+        stop = center_s + span_s/2.
+
+        t = np.linspace(-0.5/self.frequency.step, 0.5/self.frequency.step, 
+                        self.frequency.npoints)
+
+        start_idx = find_nearest_index(t, start)
+        stop_idx = find_nearest_index(t, stop)
+
+        window_width = abs(stop_idx - start_idx)
+
+        if window_width == 0:
+            window_array = np.array([])
+        else:
+            window_array = signal.get_window(window, window_width)
+
+        gate = np.r_[np.zeros(start_idx),
+                     window_array,
+                     np.zeros(len(t) - stop_idx)]
+
+        kernel = np.fft.ifftshift(np.fft.fft(np.fft.fftshift(gate, axes=0), axis=0))
+        kernel = abs(kernel).flatten()
+        kernel = kernel/sum(kernel)
+
+        out = self.copy()
+
+        if center != 0:
+            out = delay_v017(out, -center, 'ns', port=0, media=media)  # NO *1e9!
+
+        re = np.real(out.s[:,0,0])
+        im = np.imag(out.s[:,0,0])
+        s = convolve1d(re, kernel, mode=boundary) + \
+            1j*convolve1d(im, kernel, mode=boundary)
+        out.s[:,0,0] = s
+
+        if center != 0:
+            out = delay_v017(out, center, 'ns', port=0, media=media)  # NO *1e9!
+
+        if mode == 'bandstop':
+            out = self - out
+
+        return out
+
+    rf.Network.delay = delay_v017
+    rf.Network.time_gate = time_gate_v017
 
 MAXF = 4
 MINF = 0.4
@@ -1266,7 +1298,6 @@ class App(tk.Tk):
             axTR.set_yticks([])
         
         if doGate:
-            toggle_debug()
             for v, p, d in self.fls:
                 if not v.get(): continue
                 ext = Path(p).suffix.lower()
