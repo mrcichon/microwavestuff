@@ -19,38 +19,52 @@ from scipy import signal
 from scipy.ndimage import convolve1d
 
 # work in progress, tak wiem że to bardzo łopatologiczne rozwiązanie
-def patch_time_gate_v017():
-    if rf.__version__.startswith('0.17'): return
-    
-    def tg(ntwk, center, span):
-        c, s = center * 1e-9, span * 1e-9
-        t = np.linspace(-0.5, 0.5, ntwk.frequency.npoints) / ntwk.frequency.step
-        
-        i0 = np.argmin(np.abs(t - (c - s/2)))
-        i1 = np.argmin(np.abs(t - (c + s/2)))
 
-        
-        if i0 >= i1:
-            i0, i1 = min(i0, i1), max(i0, i1) + 1
-        
-        win = signal.windows.kaiser(i1 - i0, 6)
-        gate = np.r_[np.zeros(i0), win, np.zeros(len(t) - i1)]
-        
-        k = np.fft.ifftshift(np.fft.fft(np.fft.fftshift(gate, axes=0), axis=0))
-        k = np.abs(k).flatten()
-        if k.sum() == 0:
-            k = np.ones_like(k) / len(k)
-        else:
-            k /= k.sum()
-        
-        out = ntwk.copy()
-        out.s[:,0,0] = convolve1d(out.s[:,0,0].real, k, mode='reflect') + \
-                       1j * convolve1d(out.s[:,0,0].imag, k, mode='reflect')
-        return out
+_orig_tg = None
+def debug_gate(self, center, span):
+    print(f"\n=== DEBUG GATE ===")
+    print(f"shape: {self.s.shape}, freq: {len(self.f)}, step: {self.frequency.step/1e6:.1f}MHz")
     
-    rf.Network.time_gate = lambda self, center, span, **_: tg(self, center, span)
+    c_s, s_s = center * 1e-9, span * 1e-9
+    t = np.linspace(-0.5/self.frequency.step, 0.5/self.frequency.step, self.frequency.npoints)
+    i0, i1 = np.argmin(np.abs(t - (c_s - s_s/2))), np.argmin(np.abs(t - (c_s + s_s/2)))
+    if i0 >= i1: i0, i1 = min(i0, i1), max(i0, i1) + 1
+    
+    print(f"gate: i0={i0}, i1={i1}, width={i1-i0}, total={len(t)}")
+    
+    gate = np.r_[np.zeros(i0), kaiser(i1 - i0, 6), np.zeros(len(t) - i1)]
+    print(f"gate sum: {gate.sum():.3f}, max: {gate.max():.3f}")
+    
+    k = np.abs(np.fft.ifftshift(np.fft.fft(np.fft.fftshift(gate)))).flatten()
+    print(f"kernel pre-norm: sum={k.sum():.3f}, max={k.max():.6f}, min={k.min():.6f}")
+    k = k / k.sum() if k.sum() else np.ones_like(k) / len(k)
+    print(f"kernel post-norm: sum={k.sum():.3f}, max={k.max():.6f}")
+    
+    s11_in = self.s[:, 0, 0]
+    print(f"s11 in: mean={np.mean(np.abs(s11_in)):.6f}, std={np.std(np.abs(s11_in)):.6f}")
+    print(f"s11 in dB: mean={np.mean(20*np.log10(np.abs(s11_in))):.1f}, std={np.std(20*np.log10(np.abs(s11_in))):.1f}")
+    
+    s11_out = convolve1d(s11_in.real, k, mode='reflect') + 1j * convolve1d(s11_in.imag, k, mode='reflect')
+    print(f"s11 out: mean={np.mean(np.abs(s11_out)):.6f}, std={np.std(np.abs(s11_out)):.6f}")
+    print(f"s11 out dB: mean={np.mean(20*np.log10(np.abs(s11_out))):.1f}, std={np.std(20*np.log10(np.abs(s11_out))):.1f}")
+    
+    if np.all(s11_out == 0): print("!!! OUTPUT IS ALL ZEROS")
+    if np.any(np.isnan(s11_out)): print("!!! OUTPUT HAS NANs")
+    if np.all(s11_in == s11_out): print("!!! NO CHANGE DETECTED")
+    
+    return tg(self, center, span)
 
-patch_time_gate_v017()
+def toggle_debug():
+    global _orig_tg
+    if _orig_tg is None:
+        _orig_tg = rf.Network.time_gate
+        rf.Network.time_gate = debug_gate
+        print("DEBUG ON")
+    else:
+        rf.Network.time_gate = _orig_tg
+        _orig_tg = None
+        print("DEBUG OFF")
+
 
 
 MAXF = 4
@@ -1252,6 +1266,7 @@ class App(tk.Tk):
             axTR.set_yticks([])
         
         if doGate:
+            toggle_debug()
             for v, p, d in self.fls:
                 if not v.get(): continue
                 ext = Path(p).suffix.lower()
