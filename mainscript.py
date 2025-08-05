@@ -308,6 +308,8 @@ class App(tk.Tk):
         self.gateBox = ttk.Frame(lfrm)
         self.gateCheck = ttk.Checkbutton(self.gateBox, text="Gating", variable=self.gateChk, command=self._updAll)
         self.gateCheck.pack(side=tk.LEFT, padx=3)
+        
+
         ttk.Label(self.gateBox, text="Center [ns]").pack(side=tk.LEFT, padx=2)
         self.gateCenterEntry = ttk.Entry(self.gateBox, textvariable=self.gateCenter, width=5)
         self.gateCenterEntry.pack(side=tk.LEFT, padx=3)
@@ -319,7 +321,8 @@ class App(tk.Tk):
         self.cbox.pack(anchor="w", pady=(2,0))
         
         self.regexBox = ttk.Frame(lfrm)
-        
+        self.regexPhaseChk = tk.BooleanVar(value=False)
+
         ttk.Label(self.regexBox, text="Regex pattern:").pack(anchor="w")
         self.regexEntry = ttk.Entry(self.regexBox, textvariable=self.regexPattern, width=40)
         self.regexEntry.pack(anchor="w", pady=(2,5))
@@ -391,6 +394,13 @@ class App(tk.Tk):
         self.regexGateChk = tk.BooleanVar(value=False)
         self.regexGateCheck = ttk.Checkbutton(gatingFrame, text="Apply gating", variable=self.regexGateChk, command=self._updRegexPlot)
         self.regexGateCheck.pack(side=tk.LEFT, padx=3)
+        self.regexPhaseCheck = ttk.Checkbutton(
+            gatingFrame,
+            text="Show phase",
+            variable=self.regexPhaseChk,
+            command=self._updRegexPlot
+        )
+        self.regexPhaseCheck.pack(side=tk.LEFT, padx=3)
         ttk.Label(gatingFrame, text="Center [ns]").pack(side=tk.LEFT, padx=(10,2))
         self.regexGateCenterEntry = ttk.Entry(gatingFrame, textvariable=self.gateCenter, width=5)
         self.regexGateCenterEntry.pack(side=tk.LEFT, padx=3)
@@ -837,133 +847,144 @@ class App(tk.Tk):
 
     def _updRegexPlot(self):
         self.figR.clear()
-        
+
         pattern = self.regexPattern.get()
         param = self.regexParam.get()
         fmin = self.fmin.get()
         fmax = self.fmax.get()
         sstr = f"{fmin}-{fmax}ghz"
-        
+
         self.regexSpans = []
-        
         files_data = []
         all_files_info = []
-        
+
         for v, p, d in self.fls:
             fname = Path(p).stem
             value = self._extractValue(fname, pattern)
-            
+
             if v.get():
-                if value is not None:
-                    all_files_info.append(f"✓ {fname} → {value}")
-                else:
-                    all_files_info.append(f"✗ {fname} → no match")
-            
+                all_files_info.append(
+                    f"{'✓' if value is not None else '✗'} {fname} → "
+                    f"{value if value is not None else 'no match'}"
+                )
+
             if not v.get() or value is None:
                 continue
-                
+
             ext = Path(p).suffix.lower()
-            
             try:
                 if ext in ['.s1p', '.s2p', '.s3p']:
                     ntw_full = d.get('ntwk_full')
                     if ntw_full is None:
                         ntw_full = loadFile(p)
                         d['ntwk_full'] = ntw_full
-                    
+
                     ntw = ntw_full[sstr]
-                    
+
                     if self.regexGateChk.get():
                         center = self.gateCenter.get()
-                        span = self.gateSpan.get()
+                        span   = self.gateSpan.get()
                         s_param = getattr(ntw, param)
                         s_gated = s_param.time_gate(center=center, span=span)
-                        # s_gated = s_param.time_gate(center=center, span=span, t_unit='ns', method='convolution', conv_mode='reflect', window=('kaiser', 6))
-                        # s_gated = sRaw.time_gate(start=center-span/2, stop=center+span/2)
                         freq = ntw.f
-                        s_db = s_gated.s_db.flatten()
+                        raw_data = s_gated
                     else:
                         freq = ntw.f
-                        s_db = getattr(ntw, param).s_db.flatten()
-                    
-                    files_data.append((fname, value, freq, s_db, d))
-            except:
+                        raw_data = getattr(ntw, param)
+
+                    if self.regexPhaseChk.get():
+                        phase_rad  = np.unwrap(np.angle(raw_data.s.flatten()))
+                        phase_deg  = np.degrees(phase_rad)
+                        s_data     = (phase_deg + 180) % 360 - 180 
+
+                    else:
+                        s_data    = raw_data.s_db.flatten()
+
+                    files_data.append((fname, value, freq, s_data, d))
+
+            except Exception:
                 pass
-        
-        self._updateColorInfo()
-        
+
         self.txt.config(state=tk.NORMAL)
         self.txt.delete(1.0, tk.END)
         self.txt.insert(tk.END, f"Regex: {pattern} (group {self.regexGroup.get()})\n")
         self.txt.insert(tk.END, f"Frequency range: {fmin}-{fmax} GHz\n")
         if self.regexGateChk.get():
-            self.txt.insert(tk.END, f"Gating: {self.gateCenter.get()}±{self.gateSpan.get()/2} ns\n")
+            self.txt.insert(
+                tk.END,
+                f"Gating: {self.gateCenter.get()} ± {self.gateSpan.get()/2} ns\n"
+            )
         if self.regexHighlightChk.get():
             mode = "Strict monotonic" if self.regexStrictMonotonic.get() else "Non-strict monotonic"
             self.txt.insert(tk.END, f"Highlighting: {mode}\n")
         if self.regexSmallDiffChk.get():
-            self.txt.insert(tk.END, f"Small diff threshold: {self.regexSmallDiffThreshold.get()} dB\n")
+            self.txt.insert(
+                tk.END,
+                f"Small diff threshold: {self.regexSmallDiffThreshold.get()} dB\n"
+            )
         self.txt.insert(tk.END, "-" * 40 + "\n")
         for info in all_files_info:
             self.txt.insert(tk.END, info + "\n")
         self.txt.config(state=tk.DISABLED)
-        
-        self.axR = self.figR.add_subplot(111)
-        
+
+        ax = self.figR.add_subplot(111)
+
         if not files_data:
-            self.axR.text(0.5, 0.5, f"No files match pattern: {pattern}\nCheck regex and capture group", 
-                         ha="center", va="center", fontsize=12, color="gray")
-            self.axR.set_xticks([])
-            self.axR.set_yticks([])
+            ax.text(
+                0.5, 0.5,
+                f"No files match pattern: {pattern}\nCheck regex and capture group",
+                ha="center", va="center", fontsize=12, color="gray"
+            )
+            ax.set_xticks([])
+            ax.set_yticks([])
             self.cvR.draw()
             return
-        
-        analysis_data = [(d[0], d[1], d[2], d[3]) for d in files_data]
+
+        analysis_data = [(f, v, fr, sd) for f, v, fr, sd, _ in files_data]
         ranges, freqs, s_matrix, labels, small_diff_ranges = self._analyzeOrderedRanges(analysis_data)
         self.regexRanges = ranges
-        
-        self.regexLines = []
-        legend_items = []
-        
+
         files_data.sort(key=lambda x: x[1])
-        
+
+        legend_items = []
         for i, (fname, value, freq, s_data, file_dict) in enumerate(files_data):
-            line_kwargs = {'label': fname}
-            
+            kwargs = {'label': fname}
             if file_dict.get('line_color'):
-                line_kwargs['color'] = file_dict['line_color']
+                kwargs['color'] = file_dict['line_color']
             else:
-                colors = plt.cm.viridis(np.linspace(0, 1, len(files_data)))
-                line_kwargs['color'] = colors[i]
-            
+                cmap = plt.cm.viridis(np.linspace(0, 1, len(files_data)))
+                kwargs['color'] = cmap[i]
             if file_dict.get('line_width', 1.0) != 1.0:
-                line_kwargs['linewidth'] = file_dict['line_width']
-            
-            line, = self.axR.plot(freq, s_data, **line_kwargs)
-            self.regexLines.append(line)
+                kwargs['linewidth'] = file_dict['line_width']
+
+            line, = ax.plot(freq, s_data, **kwargs)
             legend_items.append((fname, matplotlib.colors.to_hex(line.get_color())))
-        
+
         if self.regexHighlightChk.get():
             for (f1, f2) in ranges:
-                span = self.axR.axvspan(f1, f2, color='green', alpha=0.3)
+                span = ax.axvspan(f1, f2, color='green', alpha=0.3)
                 self.regexSpans.append(span)
-            
             if self.regexSmallDiffChk.get():
                 for (f1, f2) in small_diff_ranges:
-                    span = self.axR.axvspan(f1, f2, color='blue', alpha=0.5)
+                    span = ax.axvspan(f1, f2, color='blue', alpha=0.5)
                     self.regexSpans.append(span)
-        
-        self.axR.set_xlabel("Frequency [Hz]")
-        self.axR.set_ylabel(f"|{param.upper()}| [dB]")
+
+        ax.set_xlabel("Frequency [Hz]")
+        if self.regexPhaseChk.get():
+            ax.set_ylabel(f"Phase {param.upper()} [°]")
+        else:
+            ax.set_ylabel(f"|{param.upper()}| [dB]")
+
         title = f"Regex-based ordering: {pattern} (group {self.regexGroup.get()})"
+        if self.regexPhaseChk.get():
+            title += " — Phase"
         if self.regexGateChk.get():
-            title += f" - Gated ({self.gateCenter.get()}±{self.gateSpan.get()/2} ns)"
-        self.axR.set_title(title)
-        self.axR.grid(True)
-        
+            title += f" — Gated ({self.gateCenter.get()}±{self.gateSpan.get()/2} ns)"
+        ax.set_title(title)
+        ax.grid(True)
+
         self.figR.tight_layout()
         self.cvR.draw()
-        
         self._updateLegendPanel(legend_items, 'regex')
 
     def _onTab(self, e):
