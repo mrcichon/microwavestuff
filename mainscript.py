@@ -163,6 +163,7 @@ class App(tk.Tk):
         self.regexSmallDiffChk = tk.BooleanVar(value=False)
         self.regexSmallDiffThreshold = ValidatedDoubleVar(value=0.1)
         self.regexSmallDiffMinCount = tk.IntVar(value=1)
+        self.regexSmallDiffRefDB = ValidatedDoubleVar(value=10.0)
         
         self.overlapData = {}
         self.fileListCanvas = None
@@ -358,11 +359,15 @@ class App(tk.Tk):
                                                       variable=self.regexSmallDiffChk, 
                                                       command=self._updRegexPlot)
         self.regexSmallDiffCheckBtn.pack(side=tk.LEFT, padx=3)
-        ttk.Label(smallDiffFrame, text="Threshold:").pack(side=tk.LEFT, padx=(10,2))
+        ttk.Label(smallDiffFrame, text="Tolerance:").pack(side=tk.LEFT, padx=(10,2))
         thresholdEntry = ttk.Entry(smallDiffFrame, textvariable=self.regexSmallDiffThreshold, width=6)
         thresholdEntry.pack(side=tk.LEFT, padx=2)
         self._validateNumeric(thresholdEntry, self.regexSmallDiffThreshold, self._updRegexPlot)
-        ttk.Label(smallDiffFrame, text="dB").pack(side=tk.LEFT, padx=(0,5))
+        ttk.Label(smallDiffFrame, text="@").pack(side=tk.LEFT, padx=(2,2))
+        refDBEntry = ttk.Entry(smallDiffFrame, textvariable=self.regexSmallDiffRefDB, width=6)
+        refDBEntry.pack(side=tk.LEFT, padx=2)
+        self._validateNumeric(refDBEntry, self.regexSmallDiffRefDB, self._updRegexPlot)
+        ttk.Label(smallDiffFrame, text="dB ref").pack(side=tk.LEFT, padx=(0,5))
         ttk.Label(smallDiffFrame, text="Min count:").pack(side=tk.LEFT, padx=(10,2))
         minCountSpin = ttk.Spinbox(smallDiffFrame, from_=1, to=10, width=5,
                                    textvariable=self.regexSmallDiffMinCount, 
@@ -579,8 +584,13 @@ class App(tk.Tk):
         self.cv = FigureCanvasTkAgg(self.fig, master=plotFrame)
         canvas_widget = self.cv.get_tk_widget()
         
-        self.tb = NavigationToolbar2Tk(self.cv, plotFrame)
+        toolbar_frame = ttk.Frame(plotFrame)
+        toolbar_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        self.tb = NavigationToolbar2Tk(self.cv, toolbar_frame)
         self.tb.update()
+        self.tb.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
         
         canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
         
@@ -616,8 +626,13 @@ class App(tk.Tk):
         self.cvT = FigureCanvasTkAgg(self.figT, master=plotFrameT)
         canvas_widget = self.cvT.get_tk_widget()
         
-        self.tbT = NavigationToolbar2Tk(self.cvT, plotFrameT)
+        toolbar_frameT = ttk.Frame(plotFrameT)
+        toolbar_frameT.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        self.tbT = NavigationToolbar2Tk(self.cvT, toolbar_frameT)
         self.tbT.update()
+        self.tbT.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
         
         canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
         
@@ -652,9 +667,14 @@ class App(tk.Tk):
         self.figR, self.axR = plt.subplots(figsize=(10,7))
         self.cvR = FigureCanvasTkAgg(self.figR, master=plotFrameR)
         self.cvR.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        self.tbR = NavigationToolbar2Tk(self.cvR, plotFrameR)
+        
+        toolbar_frameR = ttk.Frame(plotFrameR)
+        toolbar_frameR.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        self.tbR = NavigationToolbar2Tk(self.cvR, toolbar_frameR)
         self.tbR.update()
-        self.tbR.pack(fill=tk.X)
+        self.tbR.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
         
         self.legendFrameR = ttk.Frame(self.plotPaneR)
         self.plotPaneR.add(self.legendFrameR, weight=1)
@@ -732,11 +752,12 @@ class App(tk.Tk):
     def _updateColorInfo(self):
         if self.regexSmallDiffChk.get():
             threshold = self.regexSmallDiffThreshold.get()
+            ref_db = self.regexSmallDiffRefDB.get()
             min_count = self.regexSmallDiffMinCount.get()
             if min_count == 1:
-                text = f"Green: monotonic | Blue: any difference <= {threshold} dB"
+                text = f"Green: monotonic | Blue: any difference <= {threshold} @ {ref_db}dB scaled"
             else:
-                text = f"Green: monotonic | Blue: >={min_count} differences <= {threshold} dB"
+                text = f"Green: monotonic | Blue: >={min_count} differences <= {threshold} @ {ref_db}dB scaled"
         else:
             text = "Green: monotonic regions"
         self.colorInfoLabel.config(text=text)
@@ -806,12 +827,23 @@ class App(tk.Tk):
         small_diff_ranges = []
         if self.regexSmallDiffChk.get() and ordered_indices:
             min_count = self.regexSmallDiffMinCount.get()
+            base_threshold = self.regexSmallDiffThreshold.get()
+            ref_db = self.regexSmallDiffRefDB.get()
+            
             for i in ordered_indices:
                 values = s_matrix[:, i]
                 diffs = np.diff(values)
                 abs_diffs = np.abs(diffs)
                 
-                small_diff_count = np.sum(abs_diffs <= threshold)
+                avg_level = np.mean(values)
+                if ref_db != 0:
+                    scaled_threshold = base_threshold * abs(avg_level) / abs(ref_db)
+                else:
+                    scaled_threshold = base_threshold
+                
+                scaled_threshold = max(scaled_threshold, base_threshold * 0.1)
+                
+                small_diff_count = np.sum(abs_diffs <= scaled_threshold)
                 
                 if small_diff_count >= min_count:
                     small_diff_ranges.append((freqs[i], freqs[i]))
@@ -912,7 +944,7 @@ class App(tk.Tk):
         if self.regexSmallDiffChk.get():
             self.txt.insert(
                 tk.END,
-                f"Small diff threshold: {self.regexSmallDiffThreshold.get()} dB\n"
+                f"Small diff threshold: {self.regexSmallDiffThreshold.get()} @ {self.regexSmallDiffRefDB.get()} dB (scaled)\n"
             )
         self.txt.insert(tk.END, "-" * 40 + "\n")
         for info in all_files_info:
@@ -2506,7 +2538,7 @@ class App(tk.Tk):
             ttk.Label(frame, text=displayName, font=("", 9)).pack(side=tk.LEFT)
         
         legendCanvas.configure(scrollregion=legendCanvas.bbox("all"))
-    
+
     def _showStyleMenu(self, event, filepath):
         file_data = None
         for v, p, d in self.fls:
