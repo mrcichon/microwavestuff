@@ -18,15 +18,12 @@ from itertools import combinations, cycle
 from scipy import signal
 from scipy.ndimage import convolve1d
 
-# work in progress, tak wiem że to bardzo łopatologiczne rozwiązanie
 if rf.__version__ > "0.17.0":
-
     def find_nearest_index(array, value):
         return (np.abs(array-value)).argmin()
 
     def delay_v017(self, d, unit='deg', port=0, media=None, **kw):
-        if d == 0:
-            return self
+        if d == 0: return self
         d = d/2.
         if self.nports > 2:
             raise NotImplementedError('only implemented for 1 and 2 ports')
@@ -36,10 +33,7 @@ if rf.__version__ > "0.17.0":
             except:
                 from skrf.media.freespace import Freespace
             media = Freespace(frequency=self.frequency, z0=self.z0[:,port])
-
         l = media.line(d=d, unit=unit, **kw)
-        print(f"DEBUG line: d={d}, unit={unit}, line.s21[0]={l.s[0,1,0]}")
-
         return l**self
 
     def time_gate_v017(self, center=None, span=None, **kwargs):
@@ -61,7 +55,6 @@ if rf.__version__ > "0.17.0":
 
         start_idx = find_nearest_index(t, start)
         stop_idx = find_nearest_index(t, stop)
-
         window_width = abs(stop_idx - start_idx)
 
         if window_width == 0:
@@ -80,7 +73,7 @@ if rf.__version__ > "0.17.0":
         out = self.copy()
 
         if center != 0:
-            out = delay_v017(out, -center, 'ns', port=0, media=media)  # NO *1e9!
+            out = delay_v017(out, -center, 'ns', port=0, media=media)
 
         re = np.real(out.s[:,0,0])
         im = np.imag(out.s[:,0,0])
@@ -89,7 +82,7 @@ if rf.__version__ > "0.17.0":
         out.s[:,0,0] = s
 
         if center != 0:
-            out = delay_v017(out, center, 'ns', port=0, media=media)  # NO *1e9!
+            out = delay_v017(out, center, 'ns', port=0, media=media)
 
         if mode == 'bandstop':
             out = self - out
@@ -309,7 +302,6 @@ class App(tk.Tk):
         self.gateCheck = ttk.Checkbutton(self.gateBox, text="Gating", variable=self.gateChk, command=self._updAll)
         self.gateCheck.pack(side=tk.LEFT, padx=3)
         
-
         ttk.Label(self.gateBox, text="Center [ns]").pack(side=tk.LEFT, padx=2)
         self.gateCenterEntry = ttk.Entry(self.gateBox, textvariable=self.gateCenter, width=5)
         self.gateCenterEntry.pack(side=tk.LEFT, padx=3)
@@ -742,9 +734,9 @@ class App(tk.Tk):
             threshold = self.regexSmallDiffThreshold.get()
             min_count = self.regexSmallDiffMinCount.get()
             if min_count == 1:
-                text = f"Green: monotonic | Blue: any difference ≤ {threshold} dB"
+                text = f"Green: monotonic | Blue: any difference <= {threshold} dB"
             else:
-                text = f"Green: monotonic | Blue: ≥{min_count} differences ≤ {threshold} dB"
+                text = f"Green: monotonic | Blue: >={min_count} differences <= {threshold} dB"
         else:
             text = "Green: monotonic regions"
         self.colorInfoLabel.config(text=text)
@@ -864,7 +856,7 @@ class App(tk.Tk):
 
             if v.get():
                 all_files_info.append(
-                    f"{'✓' if value is not None else '✗'} {fname} → "
+                    f"{'Y' if value is not None else 'N'} {fname} -> "
                     f"{value if value is not None else 'no match'}"
                 )
 
@@ -912,7 +904,7 @@ class App(tk.Tk):
         if self.regexGateChk.get():
             self.txt.insert(
                 tk.END,
-                f"Gating: {self.gateCenter.get()} ± {self.gateSpan.get()/2} ns\n"
+                f"Gating: {self.gateCenter.get()} +/- {self.gateSpan.get()/2} ns\n"
             )
         if self.regexHighlightChk.get():
             mode = "Strict monotonic" if self.regexStrictMonotonic.get() else "Non-strict monotonic"
@@ -979,7 +971,7 @@ class App(tk.Tk):
         if self.regexPhaseChk.get():
             title += " — Phase"
         if self.regexGateChk.get():
-            title += f" — Gated ({self.gateCenter.get()}±{self.gateSpan.get()/2} ns)"
+            title += f" — Gated ({self.gateCenter.get()}+/-{self.gateSpan.get()/2} ns)"
         ax.set_title(title)
         ax.grid(True)
 
@@ -1333,7 +1325,6 @@ class App(tk.Tk):
                         ntw = ntw_full[sstr]
                         
                         sRaw = getattr(ntw, prm)
-                        # sGate = sRaw.time_gate(center=center, span=span, t_unit='ns', method='convolution', conv_mode='reflect', window=('kaiser', 6))
                         sGate = sRaw.time_gate(center=center, span=span)
                         freq = ntw.f
                         arr = sGate.s_db.flatten()
@@ -1659,15 +1650,15 @@ class App(tk.Tk):
             formatted = [(round(s, 3), round(e, 3)) for s, e in ranges]
             self.txt.insert(tk.END, f"{name}: {formatted}\n")
         
-        self.txt.insert(tk.END, "\n📊 Overlapping ranges:\n")
+        self.txt.insert(tk.END, "\nOverlapping ranges:\n")
         self.txt.insert(tk.END, "-" * 40 + "\n")
         for (n1, r1), (n2, r2) in combinations(self.overlapData.items(), 2):
             overlaps = self._findOverlaps(r1, r2)
             if overlaps:
                 formatted = [(round(s, 3), round(e, 3)) for s, e in overlaps]
-                self.txt.insert(tk.END, f"{n1} ↔ {n2}: {formatted}\n")
+                self.txt.insert(tk.END, f"{n1} <-> {n2}: {formatted}\n")
             else:
-                self.txt.insert(tk.END, f"{n1} ↔ {n2}: no overlaps\n")
+                self.txt.insert(tk.END, f"{n1} <-> {n2}: no overlaps\n")
         self.txt.config(state=tk.DISABLED)
         
         self.axO.set_yticks(list(y_positions.values()))
@@ -1706,14 +1697,14 @@ class App(tk.Tk):
                 formatted = [(round(s, 3), round(e, 3)) for s, e in ranges]
                 f.write(f"{name}: {formatted}\n")
             
-            f.write("\n📊 Overlapping ranges:\n\n")
+            f.write("\nOverlapping ranges:\n\n")
             for (n1, r1), (n2, r2) in combinations(self.overlapData.items(), 2):
                 overlaps = self._findOverlaps(r1, r2)
                 if overlaps:
                     formatted = [(round(s, 3), round(e, 3)) for s, e in overlaps]
-                    f.write(f"{n1} ↔ {n2}: {formatted}\n")
+                    f.write(f"{n1} <-> {n2}: {formatted}\n")
                 else:
-                    f.write(f"{n1} ↔ {n2}: no overlaps\n")
+                    f.write(f"{n1} <-> {n2}: no overlaps\n")
         
         messagebox.showinfo("Export complete", f"Overlap analysis saved to {filename}")
 
@@ -2195,7 +2186,7 @@ class App(tk.Tk):
                     
                     self.txt.config(state=tk.NORMAL)
                     self.txt.insert(tk.END, f"\nCross-validation complete!\n")
-                    self.txt.insert(tk.END, f"Average MAE: {avg_mae:.2f} ± {std_mae:.2f} ml\n")
+                    self.txt.insert(tk.END, f"Average MAE: {avg_mae:.2f} +/- {std_mae:.2f} ml\n")
                     self.txt.insert(tk.END, "\nFold results:\n")
                     for i, result in enumerate(fold_results):
                         self.txt.insert(tk.END, f"  Fold {i+1}: MAE = {result['val_mae']:.2f} ml\n")
@@ -2371,7 +2362,7 @@ class App(tk.Tk):
                        [min(all_targets), max(all_targets)], 'r--')
         self.axM1.set_xlabel('True Water Volume (ml)')
         self.axM1.set_ylabel('Predicted Water Volume (ml)')
-        self.axM1.set_title(f'Water Volume Prediction\nMAE: {avg_mae:.1f}±{std_mae:.1f} ml')
+        self.axM1.set_title(f'Water Volume Prediction\nMAE: {avg_mae:.1f}+/-{std_mae:.1f} ml')
         self.axM1.grid(True, alpha=0.3)
         
         mae_per_fold = [r['val_mae'] for r in fold_results]

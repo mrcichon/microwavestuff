@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend for thread safety
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
@@ -88,15 +88,10 @@ class SParamWaterDataset(Dataset):
         
         for data_dir in data_dirs:
             if not os.path.exists(data_dir):
-                print(f"Warning: Directory {data_dir} does not exist")
                 continue
                 
-            print(f"Searching for .s2p files in {data_dir} (recursive)...")
-            
             pattern = os.path.join(data_dir, "**", "*.s2p")
             found_files = glob.glob(pattern, recursive=True)
-            
-            print(f"Found {len(found_files)} .s2p files in {data_dir}")
             s2p_files.extend(found_files)
         
         return s2p_files
@@ -106,8 +101,6 @@ class SParamWaterDataset(Dataset):
         
         if not s2p_files:
             raise ValueError(f"No .s2p files found in directories: {self.data_dirs}")
-            
-        print(f"\nLoading {len(s2p_files)} S2P files total...")
         
         loaded_count = 0
         skipped_count = 0
@@ -128,16 +121,13 @@ class SParamWaterDataset(Dataset):
                 s_data = self._load_s2p_file(filepath)
                 
                 if len(s_data) == 0:
-                    print(f"Warning: Empty file {filepath}")
                     skipped_count += 1
                     continue
                 
                 if self.n_freq is None:
                     self.n_freq = len(s_data)
-                    print(f"Detected {self.n_freq} frequency points")
                 
                 if len(s_data) != self.n_freq:
-                    print(f"Warning: {filepath} has {len(s_data)} freq points, expected {self.n_freq}")
                     skipped_count += 1
                     continue
                 
@@ -159,30 +149,11 @@ class SParamWaterDataset(Dataset):
                 loaded_count += 1
                 
             except Exception as e:
-                print(f"Error loading {filepath}: {e}")
                 skipped_count += 1
                 continue
                 
         if not self.samples:
             raise ValueError("No valid samples loaded")
-        
-        print(f"\nDataset Summary:")
-        print(f"  Successfully loaded: {loaded_count} samples")
-        print(f"  Skipped/failed: {skipped_count} samples")
-        print(f"  Distance units found: {distance_units_found['mm']} files with mm, {distance_units_found['cm']} files with cm")
-        print(f"  Feature dimension: {len(self.samples[0])}")
-        print(f"  Expected: {self.n_freq} freq × {self.n_sparams * 2} params = {self.n_freq * self.n_sparams * 2}")
-        print(f"  Water range: {min(self.targets):.0f}ml - {max(self.targets):.0f}ml")
-        print(f"  Distance range: {min(self.distances):.0f}mm - {max(self.distances):.0f}mm ({min(self.distances)/10:.1f}cm - {max(self.distances)/10:.1f}cm)")
-        
-        dir_counts = {}
-        for filename in self.filenames:
-            dir_name = filename.split('/')[0]
-            dir_counts[dir_name] = dir_counts.get(dir_name, 0) + 1
-        
-        print(f"  Samples by directory:")
-        for dir_name, count in dir_counts.items():
-            print(f"    {dir_name}: {count} samples")
 
     def _normalize_features(self):
         X = np.array(self.samples)
@@ -382,11 +353,7 @@ class WaterContentTrainer:
             else:
                 patience_counter += 1
                 
-            if epoch % 10 == 0:
-                print(f"Epoch {epoch:3d}: Train Loss {train_loss:.4f}, Val Loss {val_loss:.4f}, Val MAE {val_mae:.2f}ml")
-                
             if patience_counter >= patience:
-                print(f"Early stopping at epoch {epoch}")
                 break
                 
         if best_model_state is not None:
@@ -415,8 +382,6 @@ def cross_validate_water_predictor(data_dirs: List[str], n_folds: int = 5, devic
     fold_results = []
     
     for fold, (train_groups, val_groups) in enumerate(kf.split(group_keys)):
-        print(f"\n=== Fold {fold + 1}/{n_folds} ===")
-        
         train_indices = []
         val_indices = []
         
@@ -455,14 +420,9 @@ def cross_validate_water_predictor(data_dirs: List[str], n_folds: int = 5, devic
             'targets': targets,
             'model_state': model.state_dict().copy()
         })
-        
-        print(f"Fold {fold + 1} Results: Loss {final_loss:.4f}, MAE {final_mae:.2f}ml")
     
     avg_mae = np.mean([r['val_mae'] for r in fold_results])
     std_mae = np.std([r['val_mae'] for r in fold_results])
-    
-    print(f"\n=== Cross-Validation Results ===")
-    print(f"Average MAE: {avg_mae:.2f} ± {std_mae:.2f} ml")
     
     plt.figure(figsize=(12, 4))
     
@@ -474,7 +434,7 @@ def cross_validate_water_predictor(data_dirs: List[str], n_folds: int = 5, devic
     plt.plot([min(all_targets), max(all_targets)], [min(all_targets), max(all_targets)], 'r--')
     plt.xlabel('True Water Volume (ml)')
     plt.ylabel('Predicted Water Volume (ml)')
-    plt.title(f'Water Volume Prediction\nMAE: {avg_mae:.1f}±{std_mae:.1f} ml')
+    plt.title(f'Water Volume Prediction\nMAE: {avg_mae:.1f}+/-{std_mae:.1f} ml')
     plt.grid(True, alpha=0.3)
     
     plt.subplot(1, 2, 2)
@@ -487,7 +447,7 @@ def cross_validate_water_predictor(data_dirs: List[str], n_folds: int = 5, devic
     
     plt.tight_layout()
     plt.savefig('water_prediction_results.png', dpi=300)
-    plt.close()  # Close figure instead of showing
+    plt.close()
     
     return fold_results, avg_mae, std_mae
 
@@ -516,7 +476,6 @@ def train_final_model(data_dirs: List[str], model_save_path: str = 'water_predic
     )
     trainer = WaterContentTrainer(model, device)
     
-    print("Training final model...")
     best_val_loss = trainer.train(
         train_loader, val_loader, 
         epochs=epochs, lr=lr, patience=patience,
@@ -536,8 +495,6 @@ def train_final_model(data_dirs: List[str], model_save_path: str = 'water_predic
             'use_batchnorm': use_batchnorm
         }
     }, model_save_path)
-    
-    print(f"Final model saved to {model_save_path}")
     
     plt.figure(figsize=(10, 4))
     
@@ -562,7 +519,7 @@ def train_final_model(data_dirs: List[str], model_save_path: str = 'water_predic
     
     plt.tight_layout()
     plt.savefig('final_model_training.png', dpi=300)
-    plt.close()  # Close figure instead of showing
+    plt.close()
     
     return model, dataset
 
@@ -594,7 +551,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     if args.cv:
-        print("Running cross-validation...")
         fold_results, avg_mae, std_mae = cross_validate_water_predictor(
             args.data_dirs, device=args.device,
             hidden_dim=args.hidden_dim, latent_dim=args.latent_dim, dropout=args.dropout,
@@ -604,7 +560,6 @@ if __name__ == "__main__":
         )
         
     if args.train_final:
-        print("Training final model...")
         model, dataset = train_final_model(
             args.data_dirs, args.model_path, device=args.device,
             hidden_dim=args.hidden_dim, latent_dim=args.latent_dim, dropout=args.dropout,
