@@ -1155,8 +1155,11 @@ class App(tk.Tk):
         self.fax = list(axes) if isinstance(axes, (list, np.ndarray)) else [axes]
         if not isinstance(axes, (list, np.ndarray)):
             axes = [axes]
+        
+        all_legend_items = []
+        seen_labels = set()
+        
         for ax, prm in zip(axes, sel):
-            leg = []
             for v, p, d in self.fls:
                 if not v.get(): continue
                 ext = Path(p).suffix.lower()
@@ -1195,7 +1198,9 @@ class App(tk.Tk):
                         line_kwargs['linewidth'] = d['line_width']
                     
                     line = ax.plot(fr, arr, **line_kwargs)[0]
-                    leg.append((lbl, line.get_color()))
+                    if lbl not in seen_labels:
+                        all_legend_items.append((lbl, line.get_color()))
+                        seen_labels.add(lbl)
                 except Exception:
                     pass
             ax.set_ylabel(f"|{prm.upper()}| [dB]")
@@ -1205,7 +1210,8 @@ class App(tk.Tk):
         self.fig.tight_layout(rect=[0, 0, 1, 1])
         self.cv.draw()
         
-        self._updateLegendPanel(leg)
+        self._updateLegendPanel(all_legend_items)
+
 
     def _updTPlot(self):
         self.figT.clf()
@@ -1579,20 +1585,21 @@ class App(tk.Tk):
             return
             
         if messagebox.askyesno("Confirm deletion", f"Remove {len(toDelete)} selected files from the list?"):
-            for i in reversed(toDelete):
-                self.fls.pop(i)
+            remaining_files = []
+            for i, file_data in enumerate(self.fls):
+                if i not in toDelete:
+                    remaining_files.append(file_data)
+            
+            self.fls = remaining_files
             
             for widget in self.fbox.winfo_children():
                 widget.destroy()
             
             for v, p, d in self.fls:
-                v = tk.BooleanVar(value=True)
+                v.set(True)
                 chk = ttk.Checkbutton(self.fbox, text=Path(p).name, variable=v, command=self._updAll)
                 chk.pack(anchor="w")
                 chk.bind("<Button-3>", lambda e, path=p: self._showStyleMenu(e, path))
-                d['line_color'] = None  
-                d['line_width'] = 1.0
-                self.fls.append((v, p, d))
             
             self.fileListCanvas.configure(scrollregion=self.fileListCanvas.bbox("all"))
             self._updAll()
