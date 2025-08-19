@@ -8,13 +8,22 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix
+try:
+    import seaborn as sns
+    HAS_SEABORN = True
+except ImportError:
+    HAS_SEABORN = False
 import glob
 import os
 import re
 from typing import Tuple, List, Optional
+from collections import Counter
 
 class SParamWaterDataset(Dataset):
-    def __init__(self, data_dirs: List[str], transform_phase: bool = True, augment: bool = False, noise_std: float = 0.01):
+    def __init__(self, data_dirs: List[str], transform_phase: bool = True, augment: bool = False, 
+                 noise_std: float = 0.01, discrete: bool = False, bin_size: float = 50.0, 
+                 min_val: float = 50.0, max_val: float = 450.0):
         if isinstance(data_dirs, str):
             data_dirs = [data_dirs]
         
@@ -22,6 +31,16 @@ class SParamWaterDataset(Dataset):
         self.transform_phase = transform_phase
         self.augment = augment
         self.noise_std = noise_std
+        self.discrete = discrete
+        self.bin_size = bin_size
+        self.min_val = min_val
+        self.max_val = max_val
+        
+        if discrete:
+            self.classes = np.arange(min_val, max_val + bin_size, bin_size)
+            self.n_classes = len(self.classes)
+            self.class_to_idx = {v: i for i, v in enumerate(self.classes)}
+        
         self.samples = []
         self.targets = []  
         self.distances = []
@@ -95,9 +114,16 @@ class SParamWaterDataset(Dataset):
             s2p_files.extend(found_files)
         
         return s2p_files
+    
+    def _discretize_target(self, water_ml: float) -> int:
+        # Find nearest class
+        idx = np.argmin(np.abs(self.classes - water_ml))
+        return idx
         
     def _load_data(self):
         s2p_files = self._find_s2p_files_recursive(self.data_dirs)
+        
+        print(f"Found {len(s2p_files)} .s2p files")
         
         if not s2p_files:
             raise ValueError(f"No .s2p files found in directories: {self.data_dirs}")
@@ -142,7 +168,10 @@ class SParamWaterDataset(Dataset):
                 features = s_params.flatten()
                 
                 self.samples.append(features)
-                self.targets.append(water_ml)
+                if self.discrete:
+                    self.targets.append(self._discretize_target(water_ml))
+                else:
+                    self.targets.append(water_ml)
                 self.distances.append(distance_mm)
                 self.filenames.append(f"{os.path.basename(directory)}/{filename}")
                 
@@ -154,6 +183,12 @@ class SParamWaterDataset(Dataset):
                 
         if not self.samples:
             raise ValueError("No valid samples loaded")
+        
+        print(f"Loaded {loaded_count} valid samples, skipped {skipped_count}")
+        if self.discrete:
+            unique_targets = set(self.targets)
+            print(f"Discrete mode: {len(unique_targets)} unique classes")
+            print(f"Classes: {sorted([self.classes[t] for t in unique_targets])} ml")
 
     def _normalize_features(self):
         X = np.array(self.samples)
@@ -174,7 +209,11 @@ class SParamWaterDataset(Dataset):
     def __getitem__(self, idx):
         features = torch.FloatTensor(self.samples[idx])
         distance = torch.FloatTensor([self.distances[idx]])
-        target = torch.FloatTensor([self.targets[idx]])
+        
+        if self.discrete:
+            target = torch.LongTensor([self.targets[idx]]).squeeze()
+        else:
+            target = torch.FloatTensor([self.targets[idx]])
         
         if self.augment:
             noise = torch.randn_like(features) * self.noise_std
@@ -184,11 +223,13 @@ class SParamWaterDataset(Dataset):
 
 class AntennaAgnosticWaterPredictor(nn.Module):
     def __init__(self, n_freq: int, n_sparams: int = 4, hidden_dim: int = 256, latent_dim: int = 64, 
-                 dropout: float = 0.3, use_batchnorm: bool = True):
+                 dropout: float = 0.3, use_batchnorm: bool = True, n_classes: int = 1):
         super().__init__()
         
         self.n_freq = n_freq
         self.n_sparams = n_sparams
+        self.n_classes = n_classes
+        self.discrete = n_classes > 1
         
         input_channels = n_sparams * 2
         
@@ -232,7 +273,7 @@ class AntennaAgnosticWaterPredictor(nn.Module):
             nn.Dropout(dropout * 0.5),
         )
         
-        self.water_predictor = nn.Linear(latent_dim, 1)
+        self.water_predictor = nn.Linear(latent_dim, n_classes)
         
         self._initialize_weights()
         
@@ -258,14 +299,16 @@ class AntennaAgnosticWaterPredictor(nn.Module):
         
         fused_features = self.feature_fusion(combined)
         
-        water_volume = self.water_predictor(fused_features)
+        output = self.water_predictor(fused_features)
         
-        return water_volume
+        return output
 
 class WaterContentTrainer:
-    def __init__(self, model, device='cpu'):
+    def __init__(self, model, device='cpu', discrete=False, classes=None):
         self.model = model.to(device)
         self.device = device
+        self.discrete = discrete
+        self.classes = classes
         self.train_losses = []
         self.val_losses = []
         
@@ -308,27 +351,44 @@ class WaterContentTrainer:
                 loss = criterion(pred, target)
                 
                 total_loss += loss.item()
-                predictions.extend(pred.cpu().numpy().flatten())
-                targets.extend(target.cpu().numpy().flatten())
+                
+                if self.discrete:
+                    pred_class = torch.argmax(pred, dim=1)
+                    predictions.extend(pred_class.cpu().numpy())
+                    targets.extend(target.cpu().numpy())
+                else:
+                    predictions.extend(pred.cpu().numpy().flatten())
+                    targets.extend(target.cpu().numpy().flatten())
                 
         avg_loss = total_loss / len(val_loader)
-        mae = np.mean(np.abs(np.array(predictions) - np.array(targets)))
         
-        return avg_loss, mae, predictions, targets
+        if self.discrete:
+            # Convert class indices back to ml values
+            pred_ml = np.array([self.classes[p] for p in predictions])
+            target_ml = np.array([self.classes[t] for t in targets])
+            mae = np.mean(np.abs(pred_ml - target_ml))
+            accuracy = np.mean(np.array(predictions) == np.array(targets))
+            return avg_loss, mae, pred_ml, target_ml, accuracy
+        else:
+            mae = np.mean(np.abs(np.array(predictions) - np.array(targets)))
+            return avg_loss, mae, predictions, targets
     
     def train(self, train_loader, val_loader, epochs=100, lr=0.001, patience=15, 
               weight_decay=0.01, loss_fn='huber', scheduler_patience=5):
         
-        if loss_fn == 'huber':
-            criterion = nn.HuberLoss(delta=10.0)
-        elif loss_fn == 'mse':
-            criterion = nn.MSELoss()
-        elif loss_fn == 'mae':
-            criterion = nn.L1Loss()
-        elif loss_fn == 'smooth_l1':
-            criterion = nn.SmoothL1Loss()
+        if self.discrete:
+            criterion = nn.CrossEntropyLoss()
         else:
-            criterion = nn.HuberLoss(delta=10.0)
+            if loss_fn == 'huber':
+                criterion = nn.HuberLoss(delta=10.0)
+            elif loss_fn == 'mse':
+                criterion = nn.MSELoss()
+            elif loss_fn == 'mae':
+                criterion = nn.L1Loss()
+            elif loss_fn == 'smooth_l1':
+                criterion = nn.SmoothL1Loss()
+            else:
+                criterion = nn.HuberLoss(delta=10.0)
             
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr, weight_decay=weight_decay)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=scheduler_patience, factor=0.5)
@@ -339,12 +399,22 @@ class WaterContentTrainer:
         
         for epoch in range(epochs):
             train_loss = self.train_epoch(train_loader, optimizer, criterion)
-            val_loss, val_mae, _, _ = self.validate(val_loader, criterion)
+            
+            if self.discrete:
+                val_loss, val_mae, _, _, val_acc = self.validate(val_loader, criterion)
+            else:
+                val_loss, val_mae, _, _ = self.validate(val_loader, criterion)
             
             self.train_losses.append(train_loss)
             self.val_losses.append(val_loss)
             
             scheduler.step(val_loss)
+            
+            if (epoch + 1) % 10 == 0:
+                if self.discrete:
+                    print(f"  Epoch {epoch+1}/{epochs}: train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, val_mae={val_mae:.1f}ml, val_acc={val_acc*100:.1f}%")
+                else:
+                    print(f"  Epoch {epoch+1}/{epochs}: train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, val_mae={val_mae:.1f}ml")
             
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
@@ -354,6 +424,7 @@ class WaterContentTrainer:
                 patience_counter += 1
                 
             if patience_counter >= patience:
+                print(f"  Early stopping at epoch {epoch+1}")
                 break
                 
         if best_model_state is not None:
@@ -365,9 +436,17 @@ def cross_validate_water_predictor(data_dirs: List[str], n_folds: int = 5, devic
                                   hidden_dim: int = 256, latent_dim: int = 64, dropout: float = 0.3,
                                   lr: float = 0.001, weight_decay: float = 0.01, loss_fn: str = 'huber',
                                   augment: bool = False, noise_std: float = 0.01, use_batchnorm: bool = True,
-                                  epochs: int = 150, patience: int = 15):
+                                  epochs: int = 150, patience: int = 15, discrete: bool = False,
+                                  bin_size: float = 50.0, min_val: float = 50.0, max_val: float = 450.0):
     
-    dataset = SParamWaterDataset(data_dirs, augment=augment, noise_std=noise_std)
+    print(f"Loading dataset from {len(data_dirs)} directories...")
+    if discrete:
+        print(f"Using discrete classification mode ({bin_size}ml bins from {min_val} to {max_val}ml)")
+    dataset = SParamWaterDataset(data_dirs, augment=augment, noise_std=noise_std, discrete=discrete,
+                               bin_size=bin_size, min_val=min_val, max_val=max_val)
+    print(f"Loaded {len(dataset)} samples")
+    print(f"Using {n_folds}-fold cross-validation")
+    print(f"Device: {device}")
     
     sample_groups = {}
     for i, (water, distance, filename) in enumerate(zip(dataset.targets, dataset.distances, dataset.filenames)):
@@ -382,6 +461,8 @@ def cross_validate_water_predictor(data_dirs: List[str], n_folds: int = 5, devic
     fold_results = []
     
     for fold, (train_groups, val_groups) in enumerate(kf.split(group_keys)):
+        print(f"\nFold {fold+1}/{n_folds}")
+        
         train_indices = []
         val_indices = []
         
@@ -393,17 +474,34 @@ def cross_validate_water_predictor(data_dirs: List[str], n_folds: int = 5, devic
         train_dataset = torch.utils.data.Subset(dataset, train_indices)
         val_dataset = torch.utils.data.Subset(dataset, val_indices)
         
-        train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
+        # Adjust batch size to ensure we have at least 2 samples per batch for batchnorm
+        if use_batchnorm:
+            train_batch_size = min(8, max(2, len(train_indices) // 4))
+        else:
+            train_batch_size = min(8, len(train_indices))
+        val_batch_size = min(8, len(val_indices))
         
+        if len(train_indices) < 4:
+            print(f"Warning: Fold {fold+1} has only {len(train_indices)} training samples. Consider more data.")
+        
+        train_loader = DataLoader(train_dataset, batch_size=train_batch_size, shuffle=True, drop_last=use_batchnorm)
+        val_loader = DataLoader(val_dataset, batch_size=val_batch_size, shuffle=False)
+        
+        print(f"  Train: {len(train_indices)} samples, batch_size={train_batch_size}")
+        print(f"  Val: {len(val_indices)} samples, batch_size={val_batch_size}")
+        
+        n_classes = dataset.n_classes if discrete else 1
         model = AntennaAgnosticWaterPredictor(
             n_freq=dataset.n_freq, 
             hidden_dim=hidden_dim,
             latent_dim=latent_dim,
             dropout=dropout,
-            use_batchnorm=use_batchnorm
+            use_batchnorm=use_batchnorm,
+            n_classes=n_classes
         )
-        trainer = WaterContentTrainer(model, device)
+        
+        trainer = WaterContentTrainer(model, device, discrete=discrete, 
+                                    classes=dataset.classes if discrete else None)
         
         best_val_loss = trainer.train(
             train_loader, val_loader, 
@@ -411,18 +509,45 @@ def cross_validate_water_predictor(data_dirs: List[str], n_folds: int = 5, devic
             weight_decay=weight_decay, loss_fn=loss_fn
         )
         
-        final_loss, final_mae, predictions, targets = trainer.validate(val_loader, nn.HuberLoss(delta=10.0))
-        
-        fold_results.append({
-            'val_loss': final_loss,
-            'val_mae': final_mae,
-            'predictions': predictions,
-            'targets': targets,
-            'model_state': model.state_dict().copy()
-        })
+        if discrete:
+            final_loss, final_mae, predictions, targets, final_acc = trainer.validate(val_loader, nn.CrossEntropyLoss())
+            print(f"  Final: MAE={final_mae:.1f}ml, Acc={final_acc*100:.1f}%")
+            fold_results.append({
+                'val_loss': final_loss,
+                'val_mae': final_mae,
+                'val_acc': final_acc,
+                'predictions': predictions,
+                'targets': targets,
+                'model_state': model.state_dict().copy()
+            })
+        else:
+            final_loss, final_mae, predictions, targets = trainer.validate(val_loader, nn.HuberLoss(delta=10.0))
+            print(f"  Final: MAE={final_mae:.1f}ml")
+            fold_results.append({
+                'val_loss': final_loss,
+                'val_mae': final_mae,
+                'predictions': predictions,
+                'targets': targets,
+                'model_state': model.state_dict().copy()
+            })
     
     avg_mae = np.mean([r['val_mae'] for r in fold_results])
     std_mae = np.std([r['val_mae'] for r in fold_results])
+    
+    print(f"\nCross-validation complete!")
+    print(f"Average MAE: {avg_mae:.1f} +/- {std_mae:.1f} ml")
+    if discrete:
+        avg_acc = np.mean([r['val_acc'] for r in fold_results]) * 100
+        print(f"Average Accuracy: {avg_acc:.1f}%")
+        random_acc = 100.0 / dataset.n_classes
+        print(f"Random baseline: {random_acc:.1f}%")
+        if avg_acc < random_acc * 2:
+            print("\nNote: Accuracy is low. Consider:")
+            print("- Using smaller bins (--bin_size 25)")
+            print("- Using regression mode (remove --discrete)")
+            print("- Checking if all classes have enough samples")
+    
+    print(f"Saving plot to water_prediction_results.png...")
     
     plt.figure(figsize=(12, 4))
     
@@ -434,7 +559,11 @@ def cross_validate_water_predictor(data_dirs: List[str], n_folds: int = 5, devic
     plt.plot([min(all_targets), max(all_targets)], [min(all_targets), max(all_targets)], 'r--')
     plt.xlabel('True Water Volume (ml)')
     plt.ylabel('Predicted Water Volume (ml)')
-    plt.title(f'Water Volume Prediction\nMAE: {avg_mae:.1f}+/-{std_mae:.1f} ml')
+    title = f'Water Volume Prediction\nMAE: {avg_mae:.1f}+/-{std_mae:.1f} ml'
+    if discrete:
+        avg_acc = np.mean([r['val_acc'] for r in fold_results]) * 100
+        title += f'\nAccuracy: {avg_acc:.1f}%'
+    plt.title(title)
     plt.grid(True, alpha=0.3)
     
     plt.subplot(1, 2, 2)
@@ -449,40 +578,94 @@ def cross_validate_water_predictor(data_dirs: List[str], n_folds: int = 5, devic
     plt.savefig('water_prediction_results.png', dpi=300)
     plt.close()
     
+    # If discrete, also create confusion matrix
+    if discrete and HAS_SEABORN:
+        all_pred_classes = []
+        all_true_classes = []
+        for r in fold_results:
+            pred_ml = r['predictions']
+            true_ml = r['targets']
+            # Convert back to class indices
+            pred_classes = [np.argmin(np.abs(dataset.classes - p)) for p in pred_ml]
+            true_classes = [np.argmin(np.abs(dataset.classes - t)) for t in true_ml]
+            all_pred_classes.extend(pred_classes)
+            all_true_classes.extend(true_classes)
+        
+        cm = confusion_matrix(all_true_classes, all_pred_classes)
+        
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                   xticklabels=[f'{int(c)}ml' for c in dataset.classes],
+                   yticklabels=[f'{int(c)}ml' for c in dataset.classes])
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        plt.title(f'Confusion Matrix - {n_folds}-Fold CV\nTotal Accuracy: {avg_acc:.1f}%')
+        plt.tight_layout()
+        plt.savefig('confusion_matrix.png', dpi=300)
+        plt.close()
+        print(f"Confusion matrix saved to confusion_matrix.png")
+    elif discrete and not HAS_SEABORN:
+        print("Install seaborn for confusion matrix: pip install seaborn")
+    
     return fold_results, avg_mae, std_mae
 
 def train_final_model(data_dirs: List[str], model_save_path: str = 'water_predictor.pth', device: str = 'cpu',
                      hidden_dim: int = 256, latent_dim: int = 64, dropout: float = 0.3,
                      lr: float = 0.001, weight_decay: float = 0.01, loss_fn: str = 'huber',
                      augment: bool = False, noise_std: float = 0.01, use_batchnorm: bool = True,
-                     epochs: int = 200, patience: int = 25):
+                     epochs: int = 200, patience: int = 25, discrete: bool = False):
     
-    dataset = SParamWaterDataset(data_dirs, augment=augment, noise_std=noise_std)
+    print(f"Loading dataset from {len(data_dirs)} directories...")
+    if discrete:
+        print(f"Using discrete classification mode (50ml bins)")
+    dataset = SParamWaterDataset(data_dirs, augment=augment, noise_std=noise_std, discrete=discrete)
+    print(f"Dataset size: {len(dataset)} samples")
+    print(f"Device: {device}")
+    print(f"Model: hidden_dim={hidden_dim}, latent_dim={latent_dim}")
+    if discrete:
+        print(f"Number of classes: {dataset.n_classes}")
     
     train_size = int(0.85 * len(dataset))
     val_size = len(dataset) - train_size
     
+    if len(dataset) < 10:
+        print(f"Warning: Dataset has only {len(dataset)} samples. Model may not train well.")
+    
     train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
     
-    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
+    print(f"Train/val split: {train_size}/{val_size}")
     
+    # Adjust batch size to ensure we have at least 2 samples per batch for batchnorm
+    if use_batchnorm:
+        train_batch_size = min(8, max(2, train_size // 4))
+    else:
+        train_batch_size = min(8, train_size)
+    val_batch_size = min(8, val_size)
+    
+    train_loader = DataLoader(train_dataset, batch_size=train_batch_size, shuffle=True, drop_last=use_batchnorm)
+    val_loader = DataLoader(val_dataset, batch_size=val_batch_size, shuffle=False)
+    
+    n_classes = dataset.n_classes if discrete else 1
     model = AntennaAgnosticWaterPredictor(
         n_freq=dataset.n_freq,
         hidden_dim=hidden_dim,
         latent_dim=latent_dim,
         dropout=dropout,
-        use_batchnorm=use_batchnorm
+        use_batchnorm=use_batchnorm,
+        n_classes=n_classes
     )
-    trainer = WaterContentTrainer(model, device)
     
+    trainer = WaterContentTrainer(model, device, discrete=discrete, 
+                                classes=dataset.classes if discrete else None)
+    
+    print(f"Training final model...")
     best_val_loss = trainer.train(
         train_loader, val_loader, 
         epochs=epochs, lr=lr, patience=patience,
         weight_decay=weight_decay, loss_fn=loss_fn
     )
     
-    torch.save({
+    save_dict = {
         'model_state_dict': model.state_dict(),
         'scaler_sparams': dataset.scaler_sparams,
         'scaler_distance': dataset.scaler_distance,
@@ -492,9 +675,20 @@ def train_final_model(data_dirs: List[str], model_save_path: str = 'water_predic
             'hidden_dim': hidden_dim,
             'latent_dim': latent_dim,
             'dropout': dropout,
-            'use_batchnorm': use_batchnorm
+            'use_batchnorm': use_batchnorm,
+            'discrete': discrete,
+            'n_classes': n_classes
         }
-    }, model_save_path)
+    }
+    
+    if discrete:
+        save_dict['classes'] = dataset.classes
+        save_dict['model_config']['bin_size'] = dataset.bin_size
+        save_dict['model_config']['min_val'] = dataset.min_val
+        save_dict['model_config']['max_val'] = dataset.max_val
+    
+    torch.save(save_dict, model_save_path)
+    print(f"Model saved to {model_save_path}")
     
     plt.figure(figsize=(10, 4))
     
@@ -508,18 +702,29 @@ def train_final_model(data_dirs: List[str], model_save_path: str = 'water_predic
     plt.grid(True, alpha=0.3)
     
     plt.subplot(1, 2, 2)
-    final_loss, final_mae, predictions, targets = trainer.validate(val_loader, nn.HuberLoss(delta=10.0))
+    if discrete:
+        final_loss, final_mae, predictions, targets, final_acc = trainer.validate(val_loader, nn.CrossEntropyLoss())
+        title = f'Final Model Performance\nMAE: {final_mae:.1f} ml, Acc: {final_acc*100:.1f}%'
+    else:
+        final_loss, final_mae, predictions, targets = trainer.validate(val_loader, nn.HuberLoss(delta=10.0))
+        title = f'Final Model Performance\nMAE: {final_mae:.1f} ml'
     
     plt.scatter(targets, predictions, alpha=0.6)
     plt.plot([min(targets), max(targets)], [min(targets), max(targets)], 'r--')
     plt.xlabel('True Water Volume (ml)')
     plt.ylabel('Predicted Water Volume (ml)')
-    plt.title(f'Final Model Performance\nMAE: {final_mae:.1f} ml')
+    plt.title(title)
     plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
     plt.savefig('final_model_training.png', dpi=300)
     plt.close()
+    
+    if discrete:
+        print(f"Final model performance: MAE={final_mae:.1f}ml, Accuracy={final_acc*100:.1f}%")
+    else:
+        print(f"Final model performance: MAE={final_mae:.1f}ml")
+    print("Training plot saved to final_model_training.png")
     
     return model, dataset
 
@@ -540,30 +745,45 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--weight_decay', type=float, default=0.001, help='Weight decay')
     parser.add_argument('--loss_fn', type=str, default='mse', choices=['huber', 'mse', 'mae', 'smooth_l1'], 
-                       help='Loss function')
-    parser.add_argument('--epochs', type=int, default=200, help='Number of epochs')
-    parser.add_argument('--patience', type=int, default=25, help='Early stopping patience')
+                       help='Loss function (ignored for discrete mode)')
+    parser.add_argument('--epochs', type=int, default=200, help='Number of epochs (consider less for discrete)')
+    parser.add_argument('--patience', type=int, default=25, help='Early stopping patience (consider less for discrete)')
     
     parser.add_argument('--augment', action='store_true', help='Enable data augmentation')
     parser.add_argument('--noise_std', type=float, default=0.05, help='Noise standard deviation for augmentation')
     parser.add_argument('--no_batchnorm', action='store_true', help='Disable batch normalization')
     
+    parser.add_argument('--discrete', action='store_true', help='Use discrete classification instead of regression')
+    parser.add_argument('--bin_size', type=float, default=50.0, help='Bin size for discrete mode (default: 50ml)')
+    parser.add_argument('--min_val', type=float, default=50.0, help='Minimum value for discrete bins')
+    parser.add_argument('--max_val', type=float, default=450.0, help='Maximum value for discrete bins')
+    
     args = parser.parse_args()
     
+    if not args.cv and not args.train_final:
+        print("Please specify --cv for cross-validation or --train_final to train a model")
+        parser.print_help()
+    
     if args.cv:
+        print("Starting cross-validation...")
         fold_results, avg_mae, std_mae = cross_validate_water_predictor(
             args.data_dirs, device=args.device,
             hidden_dim=args.hidden_dim, latent_dim=args.latent_dim, dropout=args.dropout,
             lr=args.lr, weight_decay=args.weight_decay, loss_fn=args.loss_fn,
             augment=args.augment, noise_std=args.noise_std, use_batchnorm=not args.no_batchnorm,
-            epochs=args.epochs, patience=args.patience
+            epochs=args.epochs, patience=args.patience, discrete=args.discrete,
+            bin_size=args.bin_size, min_val=args.min_val, max_val=args.max_val
         )
+        print(f"\nDone! Results saved to water_prediction_results.png")
         
     if args.train_final:
+        print("\nTraining final model...")
         model, dataset = train_final_model(
             args.data_dirs, args.model_path, device=args.device,
             hidden_dim=args.hidden_dim, latent_dim=args.latent_dim, dropout=args.dropout,
             lr=args.lr, weight_decay=args.weight_decay, loss_fn=args.loss_fn,
             augment=args.augment, noise_std=args.noise_std, use_batchnorm=not args.no_batchnorm,
-            epochs=args.epochs, patience=args.patience
+            epochs=args.epochs, patience=args.patience, discrete=args.discrete,
+            bin_size=args.bin_size, min_val=args.min_val, max_val=args.max_val
         )
+        print(f"\nDone! Model saved to {args.model_path}")
