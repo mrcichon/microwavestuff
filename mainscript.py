@@ -198,6 +198,10 @@ class App(tk.Tk):
         self.markersEnabled = tk.BooleanVar(value=True)
         self.markersEnabledTime = tk.BooleanVar(value=True)
         
+        self.frechetParam = tk.StringVar(value="s21")
+        self.frechetNormalize = tk.BooleanVar(value=True)
+        self.frechetData = None
+        
         try:
             import water_pred
             import torch
@@ -565,6 +569,22 @@ class App(tk.Tk):
                      font=("", 9)).pack()
             ttk.Label(msgFrame, text="3. Install other dependencies: scikit-learn, matplotlib", 
                      font=("", 9)).pack()
+        
+        self.frechetBox = ttk.Frame(lfrm)
+        ttk.Label(self.frechetBox, text="S-parameter:").pack(anchor="w", pady=(5,0))
+        sparamFrame = ttk.Frame(self.frechetBox)
+        sparamFrame.pack(anchor="w", pady=(2,0))
+        for n in ("s11", "s12", "s21", "s22"):
+            rb = ttk.Radiobutton(sparamFrame, text=n.upper(), value=n, variable=self.frechetParam)
+            rb.pack(side=tk.LEFT, padx=2)
+        
+        ttk.Checkbutton(self.frechetBox, text="Normalize (shape only)", variable=self.frechetNormalize).pack(anchor="w", pady=(5,0))
+        
+        btnFrame = ttk.Frame(self.frechetBox)
+        btnFrame.pack(anchor="w", pady=(5,0))
+        ttk.Button(btnFrame, text="Calculate", command=self._updFrechetPlot).pack(side=tk.LEFT, padx=(0,5))
+        ttk.Button(btnFrame, text="Export matrix", command=self._exportFrechetMatrix).pack(side=tk.LEFT, padx=(0,5))
+        ttk.Button(btnFrame, text="Export as CSV", command=self._exportFrechetCSV).pack(side=tk.LEFT)
 
         nb = ttk.Notebook(self)
         nb.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -739,6 +759,20 @@ class App(tk.Tk):
             lblFrame = ttk.Frame(frmM)
             lblFrame.pack(expand=True)
             ttk.Label(lblFrame, text="Model training not available", font=("", 14)).pack()
+        
+        frmFD = ttk.Frame(nb)
+        nb.add(frmFD, text="Fréchet Distance")
+        self.figFD, self.axFD = plt.subplots(figsize=(10,8))
+        self.axFD.text(0.5, 0.5, "Select parameters and click 'Calculate'\nto compute Fréchet distances", 
+                       ha="center", va="center", fontsize=12, color="gray")
+        self.axFD.set_xticks([])
+        self.axFD.set_yticks([])
+        self.cvFD = FigureCanvasTkAgg(self.figFD, master=frmFD)
+        self.cvFD.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.tbFD = NavigationToolbar2Tk(self.cvFD, frmFD)
+        self.tbFD.update()
+        self.tbFD.pack(fill=tk.X)
+        self.cvFD.draw()
         
         self.cv.mpl_connect('button_press_event', self._onClick)
         self.cvT.mpl_connect('button_press_event', self._onClick)
@@ -1021,6 +1055,7 @@ class App(tk.Tk):
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
+            self.frechetBox.pack_forget()
             self.cbox.pack(anchor="w", pady=(2,0))
             self.txt.config(state=tk.NORMAL)
             self.txt.delete(1.0, tk.END)
@@ -1035,6 +1070,7 @@ class App(tk.Tk):
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
+            self.frechetBox.pack_forget()
             self.rbox.pack(anchor="w", pady=(2,0))
             self.gateBox.pack(anchor="w", pady=(8,0))
             self.txt.config(state=tk.NORMAL)
@@ -1055,6 +1091,7 @@ class App(tk.Tk):
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
+            self.frechetBox.pack_forget()
             self.regexBox.pack(anchor="w", pady=(2,0))
             self._updRegexPlot()
         elif tabTxt == "Range Overlaps":
@@ -1065,6 +1102,7 @@ class App(tk.Tk):
             self.regexBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
+            self.frechetBox.pack_forget()
             self.overlapBox.pack(anchor="w", pady=(2,0))
             self._updOverlapPlot()
         elif tabTxt == "Variance Analysis":
@@ -1075,6 +1113,7 @@ class App(tk.Tk):
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
             self.trainBox.pack_forget()
+            self.frechetBox.pack_forget()
             self.varBox.pack(anchor="w", pady=(2,0))
             if self.varData:
                 mean_var = np.mean(self.varData['total_variance'])
@@ -1099,6 +1138,7 @@ class App(tk.Tk):
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
+            self.frechetBox.pack_forget()
             self.trainBox.pack(anchor="w", pady=(2,0))
             self.txt.config(state=tk.NORMAL)
             self.txt.delete(1.0, tk.END)
@@ -1114,6 +1154,23 @@ class App(tk.Tk):
                     self.txt.insert(tk.END, "CUDA available: No\n")
             else:
                 self.txt.insert(tk.END, "Model training module not available\n")
+            self.txt.config(state=tk.DISABLED)
+        elif tabTxt == "Fréchet Distance":
+            self.tab = "frechet"
+            self.cbox.pack_forget()
+            self.rbox.pack_forget()
+            self.gateBox.pack_forget()
+            self.regexBox.pack_forget()
+            self.overlapBox.pack_forget()
+            self.varBox.pack_forget()
+            self.trainBox.pack_forget()
+            self.frechetBox.pack(anchor="w", pady=(2,0))
+            self.txt.config(state=tk.NORMAL)
+            self.txt.delete(1.0, tk.END)
+            self.txt.insert(tk.END, "Fréchet Distance Analysis\n")
+            self.txt.insert(tk.END, "=" * 40 + "\n")
+            self.txt.insert(tk.END, "Select S-parameter and normalization mode,\n")
+            self.txt.insert(tk.END, "then click 'Calculate' to compute distances.\n")
             self.txt.config(state=tk.DISABLED)
 
     def _addFiles(self):
@@ -1211,7 +1268,6 @@ class App(tk.Tk):
         self.cv.draw()
         
         self._updateLegendPanel(all_legend_items)
-
 
     def _updTPlot(self):
         self.figT.clf()
@@ -2244,7 +2300,6 @@ class App(tk.Tk):
                 
             finally:
                 self.after(0, self.trainProgress.stop)
-
             
     def _trainFinalModel(self):
         if not self.modelTrainingAvailable:
@@ -2503,6 +2558,211 @@ class App(tk.Tk):
             self.txt.insert(tk.END, "Consider adding more data for better model performance.\n")
         
         self.txt.config(state=tk.DISABLED)
+
+    def _frechet_distance(self, p, q):
+        P, Q = len(p), len(q)
+        dist = lambda i, j: np.linalg.norm(p[i] - q[j])
+        
+        v = np.array([max(dist(0, k) for k in range(j+1)) for j in range(Q)])
+        
+        for i in range(1, P):
+            v[1:] = np.minimum(v[:-1], v[1:])
+            v[0] = max(v[0], dist(i, 0))
+            for j in range(1, Q):
+                v[j] = max(min(v[j-1], v[j]), dist(i, j))
+        
+        return v[-1]
+    
+    def _normalized_frechet(self, curve1, curve2):
+        c1 = (curve1 - np.mean(curve1)) / (np.std(curve1) + 1e-10)
+        c2 = (curve2 - np.mean(curve2)) / (np.std(curve2) + 1e-10)
+        
+        points1 = np.column_stack([np.arange(len(c1)), c1])
+        points2 = np.column_stack([np.arange(len(c2)), c2])
+        
+        return self._frechet_distance(points1, points2)
+    
+    def _raw_frechet(self, curve1, curve2, freq1, freq2):
+        points1 = np.column_stack([freq1, curve1])
+        points2 = np.column_stack([freq2, curve2])
+        
+        return self._frechet_distance(points1, points2)
+    
+    def _updFrechetPlot(self):
+        self.figFD.clear()
+        self.axFD = self.figFD.add_subplot(111)
+        
+        fmin = self.fmin.get()
+        fmax = self.fmax.get()
+        sstr = f"{fmin}-{fmax}ghz"
+        param = self.frechetParam.get()
+        normalize = self.frechetNormalize.get()
+        
+        files_data = []
+        file_names = []
+        
+        for v, p, d in self.fls:
+            if not v.get():
+                continue
+                
+            ext = Path(p).suffix.lower()
+            if ext not in ['.s1p', '.s2p', '.s3p']:
+                continue
+                
+            try:
+                ntw_full = d.get('ntwk_full')
+                cached_range = d.get('cached_range')
+                
+                if ntw_full is None:
+                    ntw_full = loadFile(p)
+                    d['ntwk_full'] = ntw_full
+                
+                if cached_range != sstr:
+                    ntw = ntw_full[sstr]
+                    d['ntwk'] = ntw
+                    d['cached_range'] = sstr
+                else:
+                    ntw = d['ntwk']
+                
+                s_data = getattr(ntw, param).s_db.flatten()
+                freq = ntw.f
+                
+                files_data.append((s_data, freq))
+                file_names.append(Path(p).stem)
+                
+            except Exception:
+                pass
+        
+        n = len(files_data)
+        
+        if n < 2:
+            self.axFD.text(0.5, 0.5, "Need at least 2 files selected", 
+                          ha="center", va="center", fontsize=12, color="gray")
+            self.axFD.set_xticks([])
+            self.axFD.set_yticks([])
+            self.cvFD.draw()
+            return
+        
+        matrix = np.zeros((n, n))
+        
+        for i in range(n):
+            for j in range(i, n):
+                if i == j:
+                    matrix[i, j] = 0
+                else:
+                    if normalize:
+                        dist = self._normalized_frechet(files_data[i][0], files_data[j][0])
+                    else:
+                        dist = self._raw_frechet(files_data[i][0], files_data[j][0],
+                                                files_data[i][1], files_data[j][1])
+                    matrix[i, j] = matrix[j, i] = dist
+        
+        self.frechetData = {
+            'matrix': matrix,
+            'file_names': file_names,
+            'param': param,
+            'normalized': normalize
+        }
+        
+        im = self.axFD.imshow(matrix, cmap='viridis', aspect='auto', interpolation='nearest')
+        
+        self.axFD.set_xticks(range(n))
+        self.axFD.set_yticks(range(n))
+        self.axFD.set_xticklabels(file_names, rotation=45, ha='right')
+        self.axFD.set_yticklabels(file_names)
+        
+        for i in range(n):
+            for j in range(n):
+                text = self.axFD.text(j, i, f'{matrix[i, j]:.2f}',
+                                     ha="center", va="center", color="white" if matrix[i, j] > matrix.max()/2 else "black",
+                                     fontsize=8)
+        
+        self.figFD.colorbar(im, ax=self.axFD, label='Fréchet Distance')
+        
+        title = f"Fréchet Distance Matrix - {param.upper()}"
+        if normalize:
+            title += " (Normalized)"
+        self.axFD.set_title(title)
+        
+        self.figFD.tight_layout()
+        self.cvFD.draw()
+        
+        self.txt.config(state=tk.NORMAL)
+        self.txt.delete(1.0, tk.END)
+        self.txt.insert(tk.END, f"Fréchet Distance Analysis\n")
+        self.txt.insert(tk.END, f"Parameter: {param.upper()}\n")
+        self.txt.insert(tk.END, f"Mode: {'Normalized (shape only)' if normalize else 'Raw (shape + position)'}\n")
+        self.txt.insert(tk.END, f"Files analyzed: {n}\n")
+        self.txt.insert(tk.END, "-" * 40 + "\n")
+        
+        min_dist = np.min(matrix[matrix > 0])
+        max_dist = np.max(matrix)
+        mean_dist = np.mean(matrix[matrix > 0])
+        
+        self.txt.insert(tk.END, f"Min distance: {min_dist:.3f}\n")
+        self.txt.insert(tk.END, f"Max distance: {max_dist:.3f}\n")
+        self.txt.insert(tk.END, f"Mean distance: {mean_dist:.3f}\n")
+        self.txt.insert(tk.END, "\nMost similar pairs:\n")
+        
+        pairs = []
+        for i in range(n):
+            for j in range(i+1, n):
+                pairs.append((matrix[i, j], file_names[i], file_names[j]))
+        
+        pairs.sort()
+        for dist, f1, f2 in pairs[:5]:
+            self.txt.insert(tk.END, f"  {f1} <-> {f2}: {dist:.3f}\n")
+        
+        self.txt.config(state=tk.DISABLED)
+    
+    def _exportFrechetMatrix(self):
+        if self.frechetData is None:
+            messagebox.showinfo("No data", "No Fréchet distance data to export")
+            return
+            
+        filename = filedialog.asksaveasfilename(
+            title="Save Fréchet distance matrix",
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        
+        if not filename:
+            return
+            
+        with open(filename, 'w') as f:
+            f.write(f"# Fréchet Distance Matrix\n")
+            f.write(f"# Parameter: {self.frechetData['param'].upper()}\n")
+            f.write(f"# Normalized: {self.frechetData['normalized']}\n")
+            f.write(f"# Files: {', '.join(self.frechetData['file_names'])}\n")
+            f.write("#\n")
+            
+            matrix = self.frechetData['matrix']
+            for i, name_i in enumerate(self.frechetData['file_names']):
+                for j, name_j in enumerate(self.frechetData['file_names']):
+                    f.write(f"{name_i}\t{name_j}\t{matrix[i, j]:.6f}\n")
+        
+        messagebox.showinfo("Export complete", f"Matrix saved to {filename}")
+    
+    def _exportFrechetCSV(self):
+        if self.frechetData is None:
+            messagebox.showinfo("No data", "No Fréchet distance data to export")
+            return
+            
+        filename = filedialog.asksaveasfilename(
+            title="Save Fréchet distance matrix as CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        
+        if not filename:
+            return
+            
+        df = pd.DataFrame(self.frechetData['matrix'], 
+                         index=self.frechetData['file_names'],
+                         columns=self.frechetData['file_names'])
+        df.to_csv(filename)
+        
+        messagebox.showinfo("Export complete", f"Matrix saved to {filename}")
 
     def _toggleLegend(self):
         if self.legendVisible.get():
