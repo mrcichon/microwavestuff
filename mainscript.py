@@ -18,6 +18,18 @@ from itertools import combinations, cycle
 from scipy import signal
 from scipy.ndimage import convolve1d
 
+
+# TODO: 1. caching
+# TODO: 2. fix importing to regex ie. no overwriting
+# DONE: 3. replace frechet with crosscorelation?
+# TODO: 4. replace file loading to c
+# TODO: 5. SIMD based optimalizations?
+# TODO: 6. integrate sparameters curves
+# TODO: 7. Make new submenu for shape / maybe stats?
+# TODO: 8. add basic stats per sparameter file
+
+
+
 if rf.__version__ > "0.17.0":
     def find_nearest_index(array, value):
         return (np.abs(array-value)).argmin()
@@ -198,9 +210,7 @@ class App(tk.Tk):
         self.markersEnabled = tk.BooleanVar(value=True)
         self.markersEnabledTime = tk.BooleanVar(value=True)
         
-        self.frechetParam = tk.StringVar(value="s21")
-        self.frechetNormalize = tk.BooleanVar(value=True)
-        self.frechetData = None
+        self.crossCorrData = None
         
         try:
             import water_pred
@@ -570,21 +580,22 @@ class App(tk.Tk):
             ttk.Label(msgFrame, text="3. Install other dependencies: scikit-learn, matplotlib", 
                      font=("", 9)).pack()
         
-        self.frechetBox = ttk.Frame(lfrm)
-        ttk.Label(self.frechetBox, text="S-parameter:").pack(anchor="w", pady=(5,0))
-        sparamFrame = ttk.Frame(self.frechetBox)
+        self.crossCorrBox = ttk.Frame(lfrm)
+        ttk.Label(self.crossCorrBox, text="S-parameter:").pack(anchor="w", pady=(5,0))
+        sparamFrame = ttk.Frame(self.crossCorrBox)
         sparamFrame.pack(anchor="w", pady=(2,0))
+        self.crossCorrParam = tk.StringVar(value="s21")
         for n in ("s11", "s12", "s21", "s22"):
-            rb = ttk.Radiobutton(sparamFrame, text=n.upper(), value=n, variable=self.frechetParam)
+            rb = ttk.Radiobutton(sparamFrame, text=n.upper(), value=n, variable=self.crossCorrParam, command=self._updCrossCorrPlot)
             rb.pack(side=tk.LEFT, padx=2)
         
-        ttk.Checkbutton(self.frechetBox, text="Normalize (shape only)", variable=self.frechetNormalize).pack(anchor="w", pady=(5,0))
+        self.crossCorrNormalize = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.crossCorrBox, text="Normalize signals", variable=self.crossCorrNormalize, command=self._updCrossCorrPlot).pack(anchor="w", pady=(5,0))
         
-        btnFrame = ttk.Frame(self.frechetBox)
+        btnFrame = ttk.Frame(self.crossCorrBox)
         btnFrame.pack(anchor="w", pady=(5,0))
-        ttk.Button(btnFrame, text="Calculate", command=self._updFrechetPlot).pack(side=tk.LEFT, padx=(0,5))
-        ttk.Button(btnFrame, text="Export matrix", command=self._exportFrechetMatrix).pack(side=tk.LEFT, padx=(0,5))
-        ttk.Button(btnFrame, text="Export as CSV", command=self._exportFrechetCSV).pack(side=tk.LEFT)
+        ttk.Button(btnFrame, text="Export matrix", command=self._exportCrossCorrMatrix).pack(side=tk.LEFT, padx=(0,5))
+        ttk.Button(btnFrame, text="Export as CSV", command=self._exportCrossCorrCSV).pack(side=tk.LEFT)
 
         nb = ttk.Notebook(self)
         nb.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -760,20 +771,16 @@ class App(tk.Tk):
             lblFrame.pack(expand=True)
             ttk.Label(lblFrame, text="Model training not available", font=("", 14)).pack()
         
-        frmFD = ttk.Frame(nb)
-        nb.add(frmFD, text="Fréchet Distance")
-        self.figFD, self.axFD = plt.subplots(figsize=(10,8))
-        self.axFD.text(0.5, 0.5, "Select parameters and click 'Calculate'\nto compute Fréchet distances", 
-                       ha="center", va="center", fontsize=12, color="gray")
-        self.axFD.set_xticks([])
-        self.axFD.set_yticks([])
-        self.cvFD = FigureCanvasTkAgg(self.figFD, master=frmFD)
-        self.cvFD.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        self.tbFD = NavigationToolbar2Tk(self.cvFD, frmFD)
-        self.tbFD.update()
-        self.tbFD.pack(fill=tk.X)
-        self.cvFD.draw()
-        
+        frmCC = ttk.Frame(nb)
+        nb.add(frmCC, text="Cross-Correlation")
+        self.figCC, self.axCC = plt.subplots(figsize=(10,8))
+        self.cvCC = FigureCanvasTkAgg(self.figCC, master=frmCC)
+        self.cvCC.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.tbCC = NavigationToolbar2Tk(self.cvCC, frmCC)
+        self.tbCC.update()
+        self.tbCC.pack(fill=tk.X)
+
+
         self.cv.mpl_connect('button_press_event', self._onClick)
         self.cvT.mpl_connect('button_press_event', self._onClick)
         self.cv.mpl_connect('pick_event', self._onPick)
@@ -1055,7 +1062,7 @@ class App(tk.Tk):
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
-            self.frechetBox.pack_forget()
+            self.crossCorrBox.pack_forget()
             self.cbox.pack(anchor="w", pady=(2,0))
             self.txt.config(state=tk.NORMAL)
             self.txt.delete(1.0, tk.END)
@@ -1070,7 +1077,7 @@ class App(tk.Tk):
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
-            self.frechetBox.pack_forget()
+            self.crossCorrBox.pack_forget()
             self.rbox.pack(anchor="w", pady=(2,0))
             self.gateBox.pack(anchor="w", pady=(8,0))
             self.txt.config(state=tk.NORMAL)
@@ -1091,7 +1098,7 @@ class App(tk.Tk):
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
-            self.frechetBox.pack_forget()
+            self.crossCorrBox.pack_forget()
             self.regexBox.pack(anchor="w", pady=(2,0))
             self._updRegexPlot()
         elif tabTxt == "Range Overlaps":
@@ -1102,7 +1109,7 @@ class App(tk.Tk):
             self.regexBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
-            self.frechetBox.pack_forget()
+            self.crossCorrBox.pack_forget()
             self.overlapBox.pack(anchor="w", pady=(2,0))
             self._updOverlapPlot()
         elif tabTxt == "Variance Analysis":
@@ -1113,7 +1120,7 @@ class App(tk.Tk):
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
             self.trainBox.pack_forget()
-            self.frechetBox.pack_forget()
+            self.crossCorrBox.pack_forget()
             self.varBox.pack(anchor="w", pady=(2,0))
             if self.varData:
                 mean_var = np.mean(self.varData['total_variance'])
@@ -1138,7 +1145,7 @@ class App(tk.Tk):
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
-            self.frechetBox.pack_forget()
+            self.crossCorrBox.pack_forget()
             self.trainBox.pack(anchor="w", pady=(2,0))
             self.txt.config(state=tk.NORMAL)
             self.txt.delete(1.0, tk.END)
@@ -1155,8 +1162,8 @@ class App(tk.Tk):
             else:
                 self.txt.insert(tk.END, "Model training module not available\n")
             self.txt.config(state=tk.DISABLED)
-        elif tabTxt == "Fréchet Distance":
-            self.tab = "frechet"
+        elif tabTxt == "Cross-Correlation":
+            self.tab = "crosscorr"
             self.cbox.pack_forget()
             self.rbox.pack_forget()
             self.gateBox.pack_forget()
@@ -1164,14 +1171,9 @@ class App(tk.Tk):
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
-            self.frechetBox.pack(anchor="w", pady=(2,0))
-            self.txt.config(state=tk.NORMAL)
-            self.txt.delete(1.0, tk.END)
-            self.txt.insert(tk.END, "Fréchet Distance Analysis\n")
-            self.txt.insert(tk.END, "=" * 40 + "\n")
-            self.txt.insert(tk.END, "Select S-parameter and normalization mode,\n")
-            self.txt.insert(tk.END, "then click 'Calculate' to compute distances.\n")
-            self.txt.config(state=tk.DISABLED)
+            self.crossCorrBox.pack(anchor="w", pady=(2,0))
+            self._updCrossCorrPlot()
+
 
     def _addFiles(self):
         pth = filedialog.askopenfilenames(
@@ -2559,44 +2561,34 @@ class App(tk.Tk):
         
         self.txt.config(state=tk.DISABLED)
 
-    def _frechet_distance(self, p, q):
-        P, Q = len(p), len(q)
-        dist = lambda i, j: np.linalg.norm(p[i] - q[j])
+    def _cross_correlation(self, s1, s2, normalize=True):
+        if normalize:
+            s1 = (s1 - np.mean(s1)) / (np.std(s1) + 1e-10)
+            s2 = (s2 - np.mean(s2)) / (np.std(s2) + 1e-10)
         
-        v = np.array([max(dist(0, k) for k in range(j+1)) for j in range(Q)])
+        n = len(s1) + len(s2) - 1
+        S1 = np.fft.fft(s1, n)
+        S2 = np.fft.fft(s2, n)
+        corr = np.real(np.fft.ifft(S1 * np.conj(S2)))
+        corr = np.concatenate([corr[-(len(s2)-1):], corr[:len(s1)]])
         
-        for i in range(1, P):
-            v[1:] = np.minimum(v[:-1], v[1:])
-            v[0] = max(v[0], dist(i, 0))
-            for j in range(1, Q):
-                v[j] = max(min(v[j-1], v[j]), dist(i, j))
+        lags = np.arange(-len(s2) + 1, len(s1))
+        best_idx = np.argmax(corr)
         
-        return v[-1]
+        if normalize:
+            corr = corr / (np.sqrt(np.sum(s1**2) * np.sum(s2**2)) + 1e-10)
+            
+        return lags[best_idx], corr[best_idx]
     
-    def _normalized_frechet(self, curve1, curve2):
-        c1 = (curve1 - np.mean(curve1)) / (np.std(curve1) + 1e-10)
-        c2 = (curve2 - np.mean(curve2)) / (np.std(curve2) + 1e-10)
-        
-        points1 = np.column_stack([np.arange(len(c1)), c1])
-        points2 = np.column_stack([np.arange(len(c2)), c2])
-        
-        return self._frechet_distance(points1, points2)
-    
-    def _raw_frechet(self, curve1, curve2, freq1, freq2):
-        points1 = np.column_stack([freq1, curve1])
-        points2 = np.column_stack([freq2, curve2])
-        
-        return self._frechet_distance(points1, points2)
-    
-    def _updFrechetPlot(self):
-        self.figFD.clear()
-        self.axFD = self.figFD.add_subplot(111)
+    def _updCrossCorrPlot(self):
+        self.figCC.clear()
+        self.axCC = self.figCC.add_subplot(111)
         
         fmin = self.fmin.get()
         fmax = self.fmax.get()
         sstr = f"{fmin}-{fmax}ghz"
-        param = self.frechetParam.get()
-        normalize = self.frechetNormalize.get()
+        param = self.crossCorrParam.get()
+        normalize = self.crossCorrNormalize.get()
         
         files_data = []
         file_names = []
@@ -2636,92 +2628,92 @@ class App(tk.Tk):
         n = len(files_data)
         
         if n < 2:
-            self.axFD.text(0.5, 0.5, "Need at least 2 files selected", 
+            self.axCC.text(0.5, 0.5, "Need at least 2 files selected", 
                           ha="center", va="center", fontsize=12, color="gray")
-            self.axFD.set_xticks([])
-            self.axFD.set_yticks([])
-            self.cvFD.draw()
+            self.axCC.set_xticks([])
+            self.axCC.set_yticks([])
+            self.cvCC.draw()
             return
         
-        matrix = np.zeros((n, n))
+        lag_matrix = np.zeros((n, n))
+        corr_matrix = np.zeros((n, n))
         
         for i in range(n):
             for j in range(i, n):
                 if i == j:
-                    matrix[i, j] = 0
+                    corr_matrix[i, j] = 1.0
+                    lag_matrix[i, j] = 0
                 else:
-                    if normalize:
-                        dist = self._normalized_frechet(files_data[i][0], files_data[j][0])
-                    else:
-                        dist = self._raw_frechet(files_data[i][0], files_data[j][0],
-                                                files_data[i][1], files_data[j][1])
-                    matrix[i, j] = matrix[j, i] = dist
+                    lag, max_corr = self._cross_correlation(files_data[i][0], files_data[j][0], normalize)
+                    corr_matrix[i, j] = corr_matrix[j, i] = max_corr
+                    lag_matrix[i, j] = lag_matrix[j, i] = lag
         
-        self.frechetData = {
-            'matrix': matrix,
+        self.crossCorrData = {
+            'corr_matrix': corr_matrix,
+            'lag_matrix': lag_matrix,
             'file_names': file_names,
             'param': param,
             'normalized': normalize
         }
         
-        im = self.axFD.imshow(matrix, cmap='viridis', aspect='auto', interpolation='nearest')
+        im = self.axCC.imshow(corr_matrix, cmap='RdBu_r', aspect='auto', interpolation='nearest', vmin=-1, vmax=1)
         
-        self.axFD.set_xticks(range(n))
-        self.axFD.set_yticks(range(n))
-        self.axFD.set_xticklabels(file_names, rotation=45, ha='right')
-        self.axFD.set_yticklabels(file_names)
+        self.axCC.set_xticks(range(n))
+        self.axCC.set_yticks(range(n))
+        self.axCC.set_xticklabels(file_names, rotation=45, ha='right')
+        self.axCC.set_yticklabels(file_names)
         
         for i in range(n):
             for j in range(n):
-                text = self.axFD.text(j, i, f'{matrix[i, j]:.2f}',
-                                     ha="center", va="center", color="white" if matrix[i, j] > matrix.max()/2 else "black",
-                                     fontsize=8)
+                text_color = "white" if abs(corr_matrix[i, j]) > 0.5 else "black"
+                text = self.axCC.text(j, i, f'{corr_matrix[i, j]:.2f}\n({int(lag_matrix[i, j])})',
+                                     ha="center", va="center", color=text_color, fontsize=7)
         
-        self.figFD.colorbar(im, ax=self.axFD, label='Fréchet Distance')
+        self.figCC.colorbar(im, ax=self.axCC, label='Cross-Correlation')
         
-        title = f"Fréchet Distance Matrix - {param.upper()}"
+        title = f"Cross-Correlation Matrix - {param.upper()}"
         if normalize:
             title += " (Normalized)"
-        self.axFD.set_title(title)
+        self.axCC.set_title(title)
         
-        self.figFD.tight_layout()
-        self.cvFD.draw()
+        self.figCC.tight_layout()
+        self.cvCC.draw()
         
         self.txt.config(state=tk.NORMAL)
         self.txt.delete(1.0, tk.END)
-        self.txt.insert(tk.END, f"Fréchet Distance Analysis\n")
+        self.txt.insert(tk.END, f"Cross-Correlation Analysis\n")
         self.txt.insert(tk.END, f"Parameter: {param.upper()}\n")
-        self.txt.insert(tk.END, f"Mode: {'Normalized (shape only)' if normalize else 'Raw (shape + position)'}\n")
+        self.txt.insert(tk.END, f"Mode: {'Normalized' if normalize else 'Raw'}\n")
         self.txt.insert(tk.END, f"Files analyzed: {n}\n")
         self.txt.insert(tk.END, "-" * 40 + "\n")
         
-        min_dist = np.min(matrix[matrix > 0])
-        max_dist = np.max(matrix)
-        mean_dist = np.mean(matrix[matrix > 0])
+        corr_values = corr_matrix[np.triu_indices(n, k=1)]
+        lag_values = lag_matrix[np.triu_indices(n, k=1)]
         
-        self.txt.insert(tk.END, f"Min distance: {min_dist:.3f}\n")
-        self.txt.insert(tk.END, f"Max distance: {max_dist:.3f}\n")
-        self.txt.insert(tk.END, f"Mean distance: {mean_dist:.3f}\n")
-        self.txt.insert(tk.END, "\nMost similar pairs:\n")
+        self.txt.insert(tk.END, f"Max correlation: {np.max(corr_values):.3f}\n")
+        self.txt.insert(tk.END, f"Min correlation: {np.min(corr_values):.3f}\n")
+        self.txt.insert(tk.END, f"Mean correlation: {np.mean(corr_values):.3f}\n")
+        self.txt.insert(tk.END, f"Mean lag: {np.mean(np.abs(lag_values)):.1f} bins\n")
+        self.txt.insert(tk.END, "\nHighest correlations:\n")
         
         pairs = []
         for i in range(n):
             for j in range(i+1, n):
-                pairs.append((matrix[i, j], file_names[i], file_names[j]))
+                pairs.append((corr_matrix[i, j], lag_matrix[i, j], file_names[i], file_names[j]))
         
-        pairs.sort()
-        for dist, f1, f2 in pairs[:5]:
-            self.txt.insert(tk.END, f"  {f1} <-> {f2}: {dist:.3f}\n")
+        pairs.sort(reverse=True)
+        for corr, lag, f1, f2 in pairs[:5]:
+            self.txt.insert(tk.END, f"  {f1} <-> {f2}: {corr:.3f} (lag: {int(lag)})\n")
         
         self.txt.config(state=tk.DISABLED)
     
-    def _exportFrechetMatrix(self):
-        if self.frechetData is None:
-            messagebox.showinfo("No data", "No Fréchet distance data to export")
+    def _exportCrossCorrMatrix(self):
+        if self.crossCorrData is None:
+            messagebox.showinfo("No data", "No cross-correlation data to export")
             return
             
         filename = filedialog.asksaveasfilename(
-            title="Save Fréchet distance matrix",
+            title="Save cross-correlation matrix",
             defaultextension=".txt",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
         )
@@ -2730,26 +2722,28 @@ class App(tk.Tk):
             return
             
         with open(filename, 'w') as f:
-            f.write(f"# Fréchet Distance Matrix\n")
-            f.write(f"# Parameter: {self.frechetData['param'].upper()}\n")
-            f.write(f"# Normalized: {self.frechetData['normalized']}\n")
-            f.write(f"# Files: {', '.join(self.frechetData['file_names'])}\n")
+            f.write(f"# Cross-Correlation Matrix\n")
+            f.write(f"# Parameter: {self.crossCorrData['param'].upper()}\n")
+            f.write(f"# Normalized: {self.crossCorrData['normalized']}\n")
+            f.write(f"# Files: {', '.join(self.crossCorrData['file_names'])}\n")
+            f.write("# Format: file1 file2 correlation lag_bins\n")
             f.write("#\n")
             
-            matrix = self.frechetData['matrix']
-            for i, name_i in enumerate(self.frechetData['file_names']):
-                for j, name_j in enumerate(self.frechetData['file_names']):
-                    f.write(f"{name_i}\t{name_j}\t{matrix[i, j]:.6f}\n")
+            corr_matrix = self.crossCorrData['corr_matrix']
+            lag_matrix = self.crossCorrData['lag_matrix']
+            for i, name_i in enumerate(self.crossCorrData['file_names']):
+                for j, name_j in enumerate(self.crossCorrData['file_names']):
+                    f.write(f"{name_i}\t{name_j}\t{corr_matrix[i, j]:.6f}\t{int(lag_matrix[i, j])}\n")
         
         messagebox.showinfo("Export complete", f"Matrix saved to {filename}")
     
-    def _exportFrechetCSV(self):
-        if self.frechetData is None:
-            messagebox.showinfo("No data", "No Fréchet distance data to export")
+    def _exportCrossCorrCSV(self):
+        if self.crossCorrData is None:
+            messagebox.showinfo("No data", "No cross-correlation data to export")
             return
             
         filename = filedialog.asksaveasfilename(
-            title="Save Fréchet distance matrix as CSV",
+            title="Save cross-correlation matrix as CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
         )
@@ -2757,12 +2751,21 @@ class App(tk.Tk):
         if not filename:
             return
             
-        df = pd.DataFrame(self.frechetData['matrix'], 
-                         index=self.frechetData['file_names'],
-                         columns=self.frechetData['file_names'])
-        df.to_csv(filename)
+        df_corr = pd.DataFrame(self.crossCorrData['corr_matrix'], 
+                               index=self.crossCorrData['file_names'],
+                               columns=self.crossCorrData['file_names'])
+        df_lag = pd.DataFrame(self.crossCorrData['lag_matrix'], 
+                              index=self.crossCorrData['file_names'],
+                              columns=self.crossCorrData['file_names'])
+        
+        with pd.ExcelWriter(filename.replace('.csv', '.xlsx'), engine='xlsxwriter') as writer:
+            df_corr.to_excel(writer, sheet_name='Correlation')
+            df_lag.to_excel(writer, sheet_name='Lag')
+        
+        df_corr.to_csv(filename)
         
         messagebox.showinfo("Export complete", f"Matrix saved to {filename}")
+
 
     def _toggleLegend(self):
         if self.legendVisible.get():
