@@ -27,6 +27,7 @@ from scipy.ndimage import convolve1d
 # TODO: 6. integrate sparameters curves
 # TODO: 7. Make new submenu for shape / maybe stats?
 # TODO: 8. add basic stats per sparameter file
+# TODO: 9. L1 L2 Lwhat have you for shape similarity / general similarity
 
 
 
