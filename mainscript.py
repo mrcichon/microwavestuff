@@ -18,7 +18,7 @@ from itertools import combinations, cycle
 from scipy import signal
 from scipy.ndimage import convolve1d
 
-
+# TODO: 0. FUCKING MATPLOTLIB CHRIST ALMIGHTY
 # TODO: 1. caching
 # TODO: 2. fix importing to regex ie. no overwriting
 # DONE: 3. replace frechet with crosscorelation?
@@ -28,6 +28,11 @@ from scipy.ndimage import convolve1d
 # TODO: 7. Make new submenu for shape / maybe stats?
 # TODO: 8. add basic stats per sparameter file
 # TODO: 9. L1 L2 Lwhat have you for shape similarity / general similarity
+# TODO: 10. throw ml into separate thing no one save for mc will use it
+# TODO: 11. christ but is matplotlib slow as sin and is it used badly here fix it
+# TODO: 12. file parsing is bad no good fix that
+# TODO: 13. numba jit potentially
+# TODO: 14. might have to rewrite parts in c
 
 
 
