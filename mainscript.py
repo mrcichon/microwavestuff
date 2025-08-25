@@ -25,9 +25,9 @@ from scipy.ndimage import convolve1d
 # TODO: 4. replace file loading to c
 # TODO: 5. SIMD based optimalizations?
 # TODO: 6. integrate sparameters curves
-# TODO: 7. Make new submenu for shape / maybe stats?
+# DONE: 7. Make new submenu for shape / maybe stats?
 # TODO: 8. add basic stats per sparameter file
-# TODO: 9. L1 L2 Lwhat have you for shape similarity / general similarity
+# DONE: 9. L1 L2 Lwhat have you for shape similarity / general similarity
 # TODO: 10. throw ml into separate thing no one save for mc will use it
 # TODO: 11. christ but is matplotlib slow as sin and is it used badly here fix it
 # TODO: 12. file parsing is bad no good fix that
@@ -585,23 +585,23 @@ class App(tk.Tk):
                      font=("", 9)).pack()
             ttk.Label(msgFrame, text="3. Install other dependencies: scikit-learn, matplotlib", 
                      font=("", 9)).pack()
-        
-        self.crossCorrBox = ttk.Frame(lfrm)
-        ttk.Label(self.crossCorrBox, text="S-parameter:").pack(anchor="w", pady=(5,0))
-        sparamFrame = ttk.Frame(self.crossCorrBox)
-        sparamFrame.pack(anchor="w", pady=(2,0))
-        self.crossCorrParam = tk.StringVar(value="s21")
-        for n in ("s11", "s12", "s21", "s22"):
-            rb = ttk.Radiobutton(sparamFrame, text=n.upper(), value=n, variable=self.crossCorrParam, command=self._updCrossCorrPlot)
-            rb.pack(side=tk.LEFT, padx=2)
-        
-        self.crossCorrNormalize = tk.BooleanVar(value=True)
-        ttk.Checkbutton(self.crossCorrBox, text="Normalize signals", variable=self.crossCorrNormalize, command=self._updCrossCorrPlot).pack(anchor="w", pady=(5,0))
-        
-        btnFrame = ttk.Frame(self.crossCorrBox)
-        btnFrame.pack(anchor="w", pady=(5,0))
-        ttk.Button(btnFrame, text="Export matrix", command=self._exportCrossCorrMatrix).pack(side=tk.LEFT, padx=(0,5))
-        ttk.Button(btnFrame, text="Export as CSV", command=self._exportCrossCorrCSV).pack(side=tk.LEFT)
+
+        self.shapeBox = ttk.Frame(lfrm)
+        ttk.Label(self.shapeBox, text="S-parameter:").pack(anchor="w", pady=(5,0))
+        sp = ttk.Frame(self.shapeBox); sp.pack(anchor="w", pady=(2,0))
+        self.shapeParam = tk.StringVar(value="s21")
+        for n in ("s11","s12","s21","s22"):
+            ttk.Radiobutton(sp, text=n.upper(), value=n, variable=self.shapeParam, command=lambda:self._updShapePlot()).pack(side=tk.LEFT, padx=2)
+        self.shapeNormalize = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.shapeBox, text="Normalize", variable=self.shapeNormalize, command=self._updShapePlot).pack(anchor="w", pady=(5,0))
+        mt = ttk.Frame(self.shapeBox); mt.pack(anchor="w", pady=(5,0))
+        self.shapeMetric = tk.StringVar(value="xcorr")
+        for t,v in (("Cross-corr","xcorr"),("L1","l1"),("L2","l2")):
+            ttk.Radiobutton(mt, text=t, value=v, variable=self.shapeMetric, command=self._updShapePlot).pack(side=tk.LEFT, padx=4)
+        btnFrame = ttk.Frame(self.shapeBox); btnFrame.pack(anchor="w", pady=(5,0))
+        ttk.Button(btnFrame, text="Export matrix", command=self._exportShapeMatrix).pack(side=tk.LEFT, padx=(0,5))
+        ttk.Button(btnFrame, text="Export as CSV", command=self._exportShapeCSV).pack(side=tk.LEFT)
+        self.shapeData = None
 
         nb = ttk.Notebook(self)
         nb.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -776,15 +776,15 @@ class App(tk.Tk):
             lblFrame = ttk.Frame(frmM)
             lblFrame.pack(expand=True)
             ttk.Label(lblFrame, text="Model training not available", font=("", 14)).pack()
-        
-        frmCC = ttk.Frame(nb)
-        nb.add(frmCC, text="Cross-Correlation")
-        self.figCC, self.axCC = plt.subplots(figsize=(10,8))
-        self.cvCC = FigureCanvasTkAgg(self.figCC, master=frmCC)
-        self.cvCC.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        self.tbCC = NavigationToolbar2Tk(self.cvCC, frmCC)
-        self.tbCC.update()
-        self.tbCC.pack(fill=tk.X)
+
+        frmSC = ttk.Frame(nb)
+        nb.add(frmSC, text="Shape Comparison")
+        self.figSC, self.axSC = plt.subplots(figsize=(10,8))
+        self.cvSC = FigureCanvasTkAgg(self.figSC, master=frmSC)
+        self.cvSC.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.tbSC = NavigationToolbar2Tk(self.cvSC, frmSC)
+        self.tbSC.update()
+        self.tbSC.pack(fill=tk.X)
 
 
         self.cv.mpl_connect('button_press_event', self._onClick)
@@ -1063,12 +1063,12 @@ class App(tk.Tk):
         if tabTxt == "Wykresy":
             self.tab = "freq"
             self.rbox.pack_forget()
+            self.shapeBox.pack_forget()
             self.gateBox.pack_forget()
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
-            self.crossCorrBox.pack_forget()
             self.cbox.pack(anchor="w", pady=(2,0))
             self.txt.config(state=tk.NORMAL)
             self.txt.delete(1.0, tk.END)
@@ -1081,9 +1081,9 @@ class App(tk.Tk):
             self.cbox.pack_forget()
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
+            self.shapeBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
-            self.crossCorrBox.pack_forget()
             self.rbox.pack(anchor="w", pady=(2,0))
             self.gateBox.pack(anchor="w", pady=(8,0))
             self.txt.config(state=tk.NORMAL)
@@ -1104,7 +1104,7 @@ class App(tk.Tk):
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
-            self.crossCorrBox.pack_forget()
+            self.shapeBox.pack_forget()
             self.regexBox.pack(anchor="w", pady=(2,0))
             self._updRegexPlot()
         elif tabTxt == "Range Overlaps":
@@ -1113,20 +1113,20 @@ class App(tk.Tk):
             self.rbox.pack_forget()
             self.gateBox.pack_forget()
             self.regexBox.pack_forget()
+            self.shapeBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
-            self.crossCorrBox.pack_forget()
             self.overlapBox.pack(anchor="w", pady=(2,0))
             self._updOverlapPlot()
         elif tabTxt == "Variance Analysis":
             self.tab = "variance"
             self.cbox.pack_forget()
             self.rbox.pack_forget()
+            self.shapeBox.pack_forget()
             self.gateBox.pack_forget()
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
             self.trainBox.pack_forget()
-            self.crossCorrBox.pack_forget()
             self.varBox.pack(anchor="w", pady=(2,0))
             if self.varData:
                 mean_var = np.mean(self.varData['total_variance'])
@@ -1151,7 +1151,7 @@ class App(tk.Tk):
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
-            self.crossCorrBox.pack_forget()
+            self.shapeBox.pack_forget()
             self.trainBox.pack(anchor="w", pady=(2,0))
             self.txt.config(state=tk.NORMAL)
             self.txt.delete(1.0, tk.END)
@@ -1168,8 +1168,8 @@ class App(tk.Tk):
             else:
                 self.txt.insert(tk.END, "Model training module not available\n")
             self.txt.config(state=tk.DISABLED)
-        elif tabTxt == "Cross-Correlation":
-            self.tab = "crosscorr"
+        elif tabTxt == "Shape Comparison":
+            self.tab = "shape"
             self.cbox.pack_forget()
             self.rbox.pack_forget()
             self.gateBox.pack_forget()
@@ -1177,8 +1177,8 @@ class App(tk.Tk):
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
-            self.crossCorrBox.pack(anchor="w", pady=(2,0))
-            self._updCrossCorrPlot()
+            self.shapeBox.pack(anchor="w", pady=(2,0))
+            self._updShapePlot()
 
 
     def _addFiles(self):
@@ -2772,6 +2772,27 @@ class App(tk.Tk):
         
         messagebox.showinfo("Export complete", f"Matrix saved to {filename}")
 
+        
+    def _align_signals(self, refs, frs):
+        f0 = frs[0]
+        out = []
+        for s,f in zip(refs,frs):
+            if len(f)==len(f0) and np.allclose(f,f0,rtol=1e-6): out.append(s); continue
+            out.append(np.interp(f0, f, s))
+        return np.array(out), f0
+
+    def _l1_distance(self, a, b, norm):
+        if norm:
+            a=(a-np.mean(a))/(np.std(a)+1e-10)
+            b=(b-np.mean(b))/(np.std(b)+1e-10)
+        return np.mean(np.abs(a-b))
+
+    def _l2_distance(self, a, b, norm):
+        if norm:
+            a=(a-np.mean(a))/(np.std(a)+1e-10)
+            b=(b-np.mean(b))/(np.std(b)+1e-10)
+        d=a-b
+        return np.sqrt(np.mean(d*d))
 
     def _toggleLegend(self):
         if self.legendVisible.get():
@@ -2814,6 +2835,128 @@ class App(tk.Tk):
             ttk.Label(frame, text=displayName, font=("", 9)).pack(side=tk.LEFT)
         
         legendCanvas.configure(scrollregion=legendCanvas.bbox("all"))
+
+
+    def _updShapePlot(self):
+        self.figSC.clear()
+        self.axSC = self.figSC.add_subplot(111)
+        fmin=self.fmin.get(); fmax=self.fmax.get(); sstr=f"{fmin}-{fmax}ghz"
+        param=self.shapeParam.get(); normalize=self.shapeNormalize.get(); metric=self.shapeMetric.get()
+        sigs=[]; freqs=[]; names=[]
+        for v,p,d in self.fls:
+            if not v.get(): continue
+            ext=Path(p).suffix.lower()
+            if ext not in ['.s1p','.s2p','.s3p']: continue
+            try:
+                ntw_full=d.get('ntwk_full'); cached=d.get('cached_range')
+                if ntw_full is None:
+                    ntw_full=loadFile(p); d['ntwk_full']=ntw_full
+                if cached!=sstr:
+                    ntw=ntw_full[sstr]; d['ntwk']=ntw; d['cached_range']=sstr
+                else:
+                    ntw=d['ntwk']
+                s=getattr(ntw,param).s_db.flatten()
+                sigs.append(s); freqs.append(ntw.f); names.append(Path(p).stem)
+            except: pass
+        n=len(sigs)
+        if n<2:
+            self.axSC.text(0.5,0.5,"Need at least 2 files",ha="center",va="center",fontsize=12,color="gray")
+            self.axSC.set_xticks([]); self.axSC.set_yticks([])
+            self.cvSC.draw(); return
+        sigs_aligned, fref = self._align_signals(sigs, freqs)
+        M=np.zeros((n,n)); L=np.zeros((n,n))
+        for i in range(n):
+            for j in range(i,n):
+                if i==j:
+                    if metric=="xcorr": M[i,j]=1; L[i,j]=0
+                    else: M[i,j]=0; L[i,j]=0
+                    continue
+                if metric=="xcorr":
+                    lag,val=self._cross_correlation(sigs_aligned[i],sigs_aligned[j],normalize)
+                    M[i,j]=M[j,i]=val; L[i,j]=L[j,i]=lag
+                elif metric=="l1":
+                    val=self._l1_distance(sigs_aligned[i],sigs_aligned[j],normalize)
+                    M[i,j]=M[j,i]=val
+                else:
+                    val=self._l2_distance(sigs_aligned[i],sigs_aligned[j],normalize)
+                    M[i,j]=M[j,i]=val
+        self.shapeData={'matrix':M,'lag':L,'names':names,'param':param,'normalized':normalize,'metric':metric}
+        if metric=="xcorr":
+            im=self.axSC.imshow(M,cmap='RdBu_r',aspect='auto',interpolation='nearest',vmin=-1,vmax=1)
+        else:
+            vmax=np.percentile(M[np.triu_indices(n,1)],95)
+            im=self.axSC.imshow(M,cmap='RdBu_r',aspect='auto',interpolation='nearest',vmin=0,vmax=vmax if vmax>0 else None)
+        self.axSC.set_xticks(range(n)); self.axSC.set_yticks(range(n))
+        self.axSC.set_xticklabels(names,rotation=45,ha='right'); self.axSC.set_yticklabels(names)
+        for i in range(n):
+            for j in range(n):
+                if metric=="xcorr":
+                    tc="white" if abs(M[i,j])>0.5 else "black"
+                    txt=f'{M[i,j]:.2f}\n({int(L[i,j])})'
+                else:
+                    tc="white" if (M[i,j]>(np.max(M)*0.6 if np.max(M)>0 else 0)) else "black"
+                    txt=f'{M[i,j]:.3f}'
+                self.axSC.text(j,i,txt,ha="center",va="center",color=tc,fontsize=7)
+        cl='Cross-Correlation' if metric=='xcorr' else ('L1 (mean abs diff)' if metric=='l1' else 'L2 (RMS diff)')
+        t=f"{cl} — {param.upper()}" + (" (Normalized)" if normalize else "")
+        self.axSC.set_title(t)
+        self.figSC.colorbar(im, ax=self.axSC, label=('corr' if metric=='xcorr' else 'distance'))
+        self.figSC.tight_layout(); self.cvSC.draw()
+        self.txt.config(state=tk.NORMAL); self.txt.delete(1.0, tk.END)
+        self.txt.insert(tk.END, "Shape Comparison\n")
+        self.txt.insert(tk.END, f"Param: {param.upper()} | Metric: {metric} | Mode: {'Normalized' if normalize else 'Raw'}\n")
+        self.txt.insert(tk.END, f"Files: {n}\n")
+        self.txt.insert(tk.END, "-"*40+"\n")
+        vals=M[np.triu_indices(n,1)]
+        if metric=="xcorr":
+            self.txt.insert(tk.END, f"Max corr: {np.max(vals):.3f}\nMin corr: {np.min(vals):.3f}\nMean corr: {np.mean(vals):.3f}\n")
+            lv=L[np.triu_indices(n,1)]
+            self.txt.insert(tk.END, f"Mean lag: {np.mean(np.abs(lv)):.1f} bins\n\nTop pairs:\n")
+            pairs=[]
+            for i in range(n):
+                for j in range(i+1,n):
+                    pairs.append((M[i,j],L[i,j],names[i],names[j]))
+            pairs.sort(reverse=True)
+            for c,l,f1,f2 in pairs[:5]:
+                self.txt.insert(tk.END, f"  {f1} <-> {f2}: {c:.3f} (lag {int(l)})\n")
+        else:
+            self.txt.insert(tk.END, f"Min dist: {np.min(vals):.4f}\nMax dist: {np.max(vals):.4f}\nMean dist: {np.mean(vals):.4f}\n\nClosest pairs:\n")
+            pairs=[]
+            for i in range(n):
+                for j in range(i+1,n):
+                    pairs.append((M[i,j],names[i],names[j]))
+            pairs.sort()
+            for d,f1,f2 in pairs[:5]:
+                self.txt.insert(tk.END, f"  {f1} <-> {f2}: {d:.4f}\n")
+        self.txt.config(state=tk.DISABLED)
+
+    def _exportShapeMatrix(self):
+        if self.shapeData is None:
+            messagebox.showinfo("No data","No shape-comparison data to export"); return
+        fn=filedialog.asksaveasfilename(title="Save matrix",defaultextension=".txt",filetypes=[("Text files","*.txt"),("All files","*.*")])
+        if not fn: return
+        with open(fn,'w') as f:
+            f.write(f"# Shape Matrix\n# Metric: {self.shapeData['metric']}\n# Parameter: {self.shapeData['param'].upper()}\n# Normalized: {self.shapeData['normalized']}\n# Files: {', '.join(self.shapeData['names'])}\n# Format: file1 file2 value lag_bins\n#\n")
+            M=self.shapeData['matrix']; L=self.shapeData['lag']; N=self.shapeData['names']
+            for i,ni in enumerate(N):
+                for j,nj in enumerate(N):
+                    lb=int(L[i,j]) if self.shapeData['metric']=="xcorr" else 0
+                    f.write(f"{ni}\t{nj}\t{M[i,j]:.6f}\t{lb}\n")
+        messagebox.showinfo("Export complete", f"Matrix saved to {fn}")
+
+    def _exportShapeCSV(self):
+        if self.shapeData is None:
+            messagebox.showinfo("No data","No shape-comparison data to export"); return
+        fn=filedialog.asksaveasfilename(title="Save matrix as CSV",defaultextension=".csv",filetypes=[("CSV files","*.csv"),("All files","*.*")])
+        if not fn: return
+        names=self.shapeData['names']
+        df=pd.DataFrame(self.shapeData['matrix'], index=names, columns=names)
+        df.to_csv(fn)
+        if self.shapeData['metric']=="xcorr":
+            df_lag=pd.DataFrame(self.shapeData['lag'], index=names, columns=names)
+            with pd.ExcelWriter(fn.replace('.csv','.xlsx'), engine='xlsxwriter') as w:
+                df.to_excel(w, sheet_name='Value'); df_lag.to_excel(w, sheet_name='Lag')
+        messagebox.showinfo("Export complete", f"Matrix saved to {fn}")
 
     def _showStyleMenu(self, event, filepath):
         file_data = None
