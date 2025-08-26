@@ -1196,8 +1196,8 @@ class App(tk.Tk):
 
             if not v.get() or value is None:
                 continue
+
             ext = Path(p).suffix.lower()
-            lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
             try:
                 if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
                     ntw_full = d.get('ntwk_full')
@@ -1502,7 +1502,7 @@ class App(tk.Tk):
             for v, p, d in self.fls:
                 if not v.get(): continue
                 ext = Path(p).suffix.lower()
-                lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
+                lbl = Path(p).stem
                 try:
                     if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
                         ntw_full = d.get('ntwk_full')
@@ -1579,7 +1579,7 @@ class App(tk.Tk):
         for v, p, d in self.fls:
             if not v.get(): continue
             ext = Path(p).suffix.lower()
-            lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
+            lbl = Path(p).stem
             try:
                 if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
                     ntw_full = d.get('ntwk_full')
@@ -1642,11 +1642,10 @@ class App(tk.Tk):
         
         for v, p, d in self.fls:
             if not v.get(): continue
-
             ext = Path(p).suffix.lower()
-            lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
+            lbl = Path(p).stem
             try:
-                if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
+                if ext in ['.s1p', '.s2p', '.s3p'] or d.get('is_average', True):
                     ntw_full = d.get('ntwk_full')
                     if ntw_full is None:
                         ntw_full = loadFile(p)
@@ -1693,7 +1692,7 @@ class App(tk.Tk):
                 ext = Path(p).suffix.lower()
                 lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
                 try:
-                    if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
+                    if ext in ['.s1p', '.s2p', '.s3p'] or d.get('is_average', True):
                         ntw_full = d.get('ntwk_full')
                         if ntw_full is None:
                             ntw_full = loadFile(p)
@@ -2205,51 +2204,50 @@ class App(tk.Tk):
         for v, p, d in self.fls:
             if not v.get():
                 continue
-                
             ext = Path(p).suffix.lower()
-            if ext not in ['.s1p', '.s2p', '.s3p']:
-                continue
-                
-            try:
-                ntw_full = d.get('ntwk_full')
-                cached_range = d.get('cached_range')
-                
-                if ntw_full is None:
-                    ntw_full = loadFile(p)
-                    d['ntwk_full'] = ntw_full
-                
-                if cached_range != sstr:
-                    ntw = ntw_full[sstr]
-                    d['ntwk'] = ntw
-                    d['cached_range'] = sstr
-                else:
-                    ntw = d['ntwk']
-                
-                if freq_ref is None:
-                    freq_ref = ntw.f
-                elif len(ntw.f) != len(freq_ref) or not np.allclose(ntw.f, freq_ref, rtol=1e-6):
-                    continue
-                
-                for sparam in ['s11', 's12', 's21', 's22']:
-                    if any(sparam in p for p in param_list):
-                        s_data = getattr(ntw, sparam)
-                        
-                        if f'{sparam}_mag' in param_list:
-                            raw_data_by_param[f'{sparam}_mag'].append(s_data.s_db.flatten())
-                        
-                        if f'{sparam}_phase' in param_list:
-                            phase_rad = np.angle(s_data.s.flatten())
-                            phase_deg = np.degrees(phase_rad)
-                            if np.any(np.abs(np.diff(phase_deg)) > 180):
-                                phase_unwrapped_rad = np.unwrap(phase_rad)
-                                phase_deg = np.degrees(phase_unwrapped_rad)
-                            raw_data_by_param[f'{sparam}_phase'].append(phase_deg)
-                
-                file_count += 1
+            lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
+            if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
+
+                try:
+                    ntw_full = d.get('ntwk_full')
+                    cached_range = d.get('cached_range')
                     
-            except Exception as e:
-                pass
-        
+                    if ntw_full is None:
+                        ntw_full = loadFile(p)
+                        d['ntwk_full'] = ntw_full
+                    
+                    if cached_range != sstr:
+                        ntw = ntw_full[sstr]
+                        d['ntwk'] = ntw
+                        d['cached_range'] = sstr
+                    else:
+                        ntw = d['ntwk']
+                    
+                    if freq_ref is None:
+                        freq_ref = ntw.f
+                    elif len(ntw.f) != len(freq_ref) or not np.allclose(ntw.f, freq_ref, rtol=1e-6):
+                        continue
+                    
+                    for sparam in ['s11', 's12', 's21', 's22']:
+                        if any(sparam in p for p in param_list):
+                            s_data = getattr(ntw, sparam)
+                            
+                            if f'{sparam}_mag' in param_list:
+                                raw_data_by_param[f'{sparam}_mag'].append(s_data.s_db.flatten())
+                            
+                            if f'{sparam}_phase' in param_list:
+                                phase_rad = np.angle(s_data.s.flatten())
+                                phase_deg = np.degrees(phase_rad)
+                                if np.any(np.abs(np.diff(phase_deg)) > 180):
+                                    phase_unwrapped_rad = np.unwrap(phase_rad)
+                                    phase_deg = np.degrees(phase_unwrapped_rad)
+                                raw_data_by_param[f'{sparam}_phase'].append(phase_deg)
+                    
+                    file_count += 1
+                        
+                except Exception as e:
+                    pass
+            
         if file_count < 2 or freq_ref is None:
             return None
         
@@ -3176,18 +3174,19 @@ class App(tk.Tk):
         for v,p,d in self.fls:
             if not v.get(): continue
             ext=Path(p).suffix.lower()
-            if ext not in ['.s1p','.s2p','.s3p']: continue
-            try:
-                ntw_full=d.get('ntwk_full'); cached=d.get('cached_range')
-                if ntw_full is None:
-                    ntw_full=loadFile(p); d['ntwk_full']=ntw_full
-                if cached!=sstr:
-                    ntw=ntw_full[sstr]; d['ntwk']=ntw; d['cached_range']=sstr
-                else:
-                    ntw=d['ntwk']
-                s=getattr(ntw,param).s_db.flatten()
-                sigs.append(s); freqs.append(ntw.f); names.append(Path(p).stem)
-            except: pass
+            lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
+            if d.get('is_average', False) or ext in ['.s1p','.s2p','.s3p']:
+                try:
+                    ntw_full=d.get('ntwk_full'); cached=d.get('cached_range')
+                    if ntw_full is None:
+                        ntw_full=loadFile(p); d['ntwk_full']=ntw_full
+                    if cached!=sstr:
+                        ntw=ntw_full[sstr]; d['ntwk']=ntw; d['cached_range']=sstr
+                    else:
+                        ntw=d['ntwk']
+                    s=getattr(ntw,param).s_db.flatten()
+                    sigs.append(s); freqs.append(ntw.f); names.append(Path(p).stem)
+                except: pass
         n=len(sigs)
         if n<2:
             self.axSC.text(0.5,0.5,"Need at least 2 files",ha="center",va="center",fontsize=12,color="gray")
@@ -3318,71 +3317,70 @@ class App(tk.Tk):
         for v, p, d in self.fls:
             if not v.get():
                 continue
-                
             ext = Path(p).suffix.lower()
-            if ext not in ['.s1p', '.s2p', '.s3p']:
-                continue
+            lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
+            if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
                 
-            try:
-                ntw_full = d.get('ntwk_full')
-                cached_range = d.get('cached_range')
-                
-                if ntw_full is None:
-                    ntw_full = loadFile(p)
-                    d['ntwk_full'] = ntw_full
-                
-                if cached_range != sstr:
-                    ntw = ntw_full[sstr]
-                    d['ntwk'] = ntw
-                    d['cached_range'] = sstr
-                else:
-                    ntw = d['ntwk']
-                
-                file_name = Path(p).stem
-                if file_name not in results:
-                    results[file_name] = {}
-                
-                freq = ntw.f
-
-                from scipy.interpolate import CubicSpline
-
-                for param in params_to_integrate:
-                    s_data = getattr(ntw, param)
+                try:
+                    ntw_full = d.get('ntwk_full')
+                    cached_range = d.get('cached_range')
                     
-                    if scale_type == 'db':
-                        values = s_data.s_db.flatten()
+                    if ntw_full is None:
+                        ntw_full = loadFile(p)
+                        d['ntwk_full'] = ntw_full
+                    
+                    if cached_range != sstr:
+                        ntw = ntw_full[sstr]
+                        d['ntwk'] = ntw
+                        d['cached_range'] = sstr
                     else:
-                        values = np.abs(s_data.s.flatten())
+                        ntw = d['ntwk']
+                    
+                    file_name = Path(p).stem
+                    if file_name not in results:
+                        results[file_name] = {}
+                    
+                    freq = ntw.f
 
-                    # freq_ghz = freq / 1e9
-                    # cs = CubicSpline(freq_ghz, values)
-                    # integral = cs.integrate(freq_ghz[0], freq_ghz[-1])
+                    from scipy.interpolate import CubicSpline
 
-                    # x_norm = np.linspace(0, 1, len(values))
-                    # cs = CubicSpline(x_norm, values)
-                    # integral = cs.integrate(0, 1)
+                    for param in params_to_integrate:
+                        s_data = getattr(ntw, param)
+                        
+                        if scale_type == 'db':
+                            values = s_data.s_db.flatten()
+                        else:
+                            values = np.abs(s_data.s.flatten())
 
-                    indices = np.arange(len(values))
-                    cs = CubicSpline(indices, values)
-                    integral = cs.integrate(indices[0], indices[-1])
+                        # freq_ghz = freq / 1e9
+                        # cs = CubicSpline(freq_ghz, values)
+                        # integral = cs.integrate(freq_ghz[0], freq_ghz[-1])
 
-                    results[file_name][param] = integral
+                        # x_norm = np.linspace(0, 1, len(values))
+                        # cs = CubicSpline(x_norm, values)
+                        # integral = cs.integrate(0, 1)
 
-                # for param in params_to_integrate:
-                #    s_data = getattr(ntw, param)
+                        indices = np.arange(len(values))
+                        cs = CubicSpline(indices, values)
+                        integral = cs.integrate(indices[0], indices[-1])
 
-                #    if scale_type == 'db':
-                #       values = s_data.s_db.flatten()
-                #    else:
-                #       values = np.abs(s_data.s.flatten())
+                        results[file_name][param] = integral
 
-                #   indices = np.arange(len(values))
-                #   integral = np.trapz(values, indices)
+                    # for param in params_to_integrate:
+                    #    s_data = getattr(ntw, param)
 
-                    #results[file_name][param] = integral                                        
-            except Exception as e:
-                pass
-        
+                    #    if scale_type == 'db':
+                    #       values = s_data.s_db.flatten()
+                    #    else:
+                    #       values = np.abs(s_data.s.flatten())
+
+                    #   indices = np.arange(len(values))
+                    #   integral = np.trapz(values, indices)
+
+                        #results[file_name][param] = integral                                        
+                except Exception as e:
+                    pass
+            
         if not results:
             self.axI.text(0.5, 0.5, "No valid data to integrate", 
                          ha="center", va="center", fontsize=12, color="gray")
