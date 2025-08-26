@@ -24,7 +24,7 @@ from scipy.ndimage import convolve1d
 # DONE: 3. replace frechet with crosscorelation?
 # TODO: 4. replace file loading to c
 # DUMB: 5. SIMD based optimalizations? no, numpy is already optimized and we're not doing live streaming of sparams data
-# TODO: 6. integrate sparameters curves
+# DONE?: 6. integrate sparameters curves
 # DONE: 7. Make new submenu for shape / maybe stats?
 # TODO: 8. add basic stats per sparameter file
 # DONE: 9. L1 L2 Lwhat have you for shape similarity / general similarity
@@ -33,6 +33,7 @@ from scipy.ndimage import convolve1d
 # TODO: 12. file parsing is bad no good fix that
 # TODO: 13. numba jit potentially
 # TODO: 14. might have to rewrite parts in c
+# TODO: 15. averages of sparams
 
 
 
@@ -213,10 +214,13 @@ class App(tk.Tk):
         self.trainDevice = tk.StringVar(value="cpu")
         self.modelTrainingAvailable = False
         
-        self.markersEnabled = tk.BooleanVar(value=True)
-        self.markersEnabledTime = tk.BooleanVar(value=True)
+        self.markersEnabled = tk.BooleanVar(value=False)
+        self.markersEnabledTime = tk.BooleanVar(value=False)
         
         self.crossCorrData = None
+
+        self.maxLag = tk.IntVar(value=5)
+        self.avgCounter = 0
         
         try:
             import water_pred
@@ -266,6 +270,8 @@ class App(tk.Tk):
         btn2.pack(anchor="w", pady=(0,10))
         btn3 = ttk.Button(lfrm, text="Usuń zaznaczone pliki", command=self._deleteSelectedFiles)
         btn3.pack(anchor="w", pady=(0,10))
+        btn4 = ttk.Button(lfrm, text="Average files", command=self._avgFiles)
+        btn4.pack(anchor="w", pady=(0,10))
         
         self.legendVisible = tk.BooleanVar(value=True)
         ttk.Checkbutton(lfrm, text="Show legend panel", variable=self.legendVisible, 
@@ -603,6 +609,14 @@ class App(tk.Tk):
         ttk.Button(btnFrame, text="Export as CSV", command=self._exportShapeCSV).pack(side=tk.LEFT)
         self.shapeData = None
 
+        lagFrame = ttk.Frame(self.shapeBox)
+        lagFrame.pack(anchor="w", pady=(5,0))
+        ttk.Label(lagFrame, text="Max lag (samples):").pack(side=tk.LEFT)
+        lagSpin = ttk.Spinbox(lagFrame, from_=1, to=1000, textvariable=self.maxLag, 
+                              width=8, command=self._updShapePlot)
+        lagSpin.pack(side=tk.LEFT, padx=(5,0))
+        ttk.Label(lagFrame, text="(0 = no limit)", font=("", 8), foreground="gray").pack(side=tk.LEFT, padx=(5,0))
+
         self.integBox = ttk.Frame(lfrm)
         ttk.Label(self.integBox, text="S-parameters to integrate:").pack(anchor="w", pady=(5,0))
         sparamFrame = ttk.Frame(self.integBox)
@@ -856,6 +870,200 @@ class App(tk.Tk):
             text = "Green: monotonic regions"
         self.colorInfoLabel.config(text=text)
 
+
+    def _avgFiles(self):
+        dialog = tk.Toplevel(self)
+        dialog.title("Average S-parameter files")
+        dialog.geometry("400x500")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        ttk.Label(dialog, text="Select averaging mode:", font=("", 10, "bold")).pack(pady=10)
+        
+        mode = tk.StringVar(value="loaded")
+        ttk.Radiobutton(dialog, text="Average loaded files", variable=mode, value="loaded").pack(anchor="w", padx=20)
+        ttk.Radiobutton(dialog, text="Load and average new files", variable=mode, value="new").pack(anchor="w", padx=20)
+        
+        ttk.Separator(dialog, orient="horizontal").pack(fill="x", pady=10)
+        
+        loadedFrame = ttk.LabelFrame(dialog, text="Select loaded files to average")
+        loadedFrame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        scrollbar = ttk.Scrollbar(loadedFrame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        listbox = tk.Listbox(loadedFrame, selectmode=tk.MULTIPLE, yscrollcommand=scrollbar.set)
+        listbox.pack(side=tk.LEFT, fill="both", expand=True)
+        scrollbar.config(command=listbox.yview)
+        
+        file_indices = []
+        for i, (v, p, d) in enumerate(self.fls):
+            if not d.get('is_average', False):
+                listbox.insert(tk.END, Path(p).name)
+                file_indices.append(i)
+        
+        nameFrame = ttk.Frame(dialog)
+        nameFrame.pack(fill="x", padx=10, pady=5)
+        ttk.Label(nameFrame, text="Average name:").pack(side=tk.LEFT)
+        nameVar = tk.StringVar(value=f"average_{self.avgCounter+1}")
+        ttk.Entry(nameFrame, textvariable=nameVar, width=30).pack(side=tk.LEFT, padx=(5,0))
+        
+        def process():
+            if mode.get() == "loaded":
+                selected = listbox.curselection()
+                if len(selected) < 2:
+                    messagebox.showwarning("Selection error", "Select at least 2 files to average")
+                    return
+                
+                indices = [file_indices[s] for s in selected]
+                self._performAverage(indices, nameVar.get())
+                dialog.destroy()
+            else:
+                dialog.destroy()
+                self._loadAndAverage(nameVar.get())
+        
+        buttonFrame = ttk.Frame(dialog)
+        buttonFrame.pack(pady=10)
+        ttk.Button(buttonFrame, text="OK", command=process).pack(side=tk.LEFT, padx=5)
+        ttk.Button(buttonFrame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+    
+    def _performAverage(self, indices, name):
+        fmin = self.fmin.get()
+        fmax = self.fmax.get()
+        sstr = f"{fmin}-{fmax}ghz"
+        
+        networks = []
+        for idx in indices:
+            v, p, d = self.fls[idx]
+            ext = Path(p).suffix.lower()
+            if ext not in ['.s1p', '.s2p', '.s3p']:
+                continue
+            
+            try:
+                ntw_full = d.get('ntwk_full')
+                if ntw_full is None:
+                    ntw_full = loadFile(p)
+                    d['ntwk_full'] = ntw_full
+                
+                networks.append(ntw_full)
+                v.set(False)
+            except:
+                pass
+        
+        if len(networks) < 2:
+            messagebox.showwarning("Error", "Could not load enough valid S-parameter files")
+            return
+        
+        avg_network = self._computeAverage(networks)
+        
+        if avg_network is None:
+            messagebox.showwarning("Error", "Failed to compute average")
+            return
+        
+        self.avgCounter += 1
+        v = tk.BooleanVar(value=True)
+        chk = tk.Checkbutton(self.fbox, text=f"[AVG] {name}", variable=v, command=self._updAll, fg="blue", activeforeground="blue")
+        chk.pack(anchor="w")
+        
+        avg_path = f"<average_{self.avgCounter}>"
+        d = {
+            'ntwk_full': avg_network,
+            'is_average': True,
+            'source_files': [self.fls[i][1] for i in indices],
+            'line_color': '#0080ff',
+            'line_width': 2.0
+        }
+        
+        chk.bind("<Button-3>", lambda e: self._showStyleMenu(e, avg_path))
+        self.fls.append((v, avg_path, d))
+        
+        self.fileListCanvas.configure(scrollregion=self.fileListCanvas.bbox("all"))
+        self._updAll()
+    
+    def _loadAndAverage(self, name):
+        files = filedialog.askopenfilenames(
+            title="Select S-parameter files to average",
+            filetypes=[("S-parameter files", "*.s1p *.s2p *.s3p"), ("All files", "*.*")]
+        )
+        
+        if len(files) < 2:
+            return
+        
+        networks = []
+        for filepath in files:
+            try:
+                ntw = loadFile(filepath)
+                networks.append(ntw)
+            except:
+                pass
+        
+        if len(networks) < 2:
+            messagebox.showwarning("Error", "Could not load enough valid S-parameter files")
+            return
+        
+        avg_network = self._computeAverage(networks)
+        
+        if avg_network is None:
+            messagebox.showwarning("Error", "Failed to compute average")
+            return
+        
+        self.avgCounter += 1
+        v = tk.BooleanVar(value=True)
+        chk = tk.Checkbutton(self.fbox, text=f"[AVG] {name}", variable=v, command=self._updAll, fg="blue", activeforeground="blue")
+        chk.pack(anchor="w")
+        
+        avg_path = f"<average_{self.avgCounter}>"
+        d = {
+            'ntwk_full': avg_network,
+            'is_average': True,
+            'source_files': files,
+            'line_color': '#0080ff',
+            'line_width': 2.0
+        }
+        
+        chk.bind("<Button-3>", lambda e: self._showStyleMenu(e, avg_path))
+        self.fls.append((v, avg_path, d))
+        
+        self.fileListCanvas.configure(scrollregion=self.fileListCanvas.bbox("all"))
+        self._updAll()
+    
+    def _computeAverage(self, networks):
+        if not networks:
+            return None
+        
+        try:
+            ref_freqs = networks[0].f
+            n_ports = networks[0].nports
+            
+            for ntw in networks[1:]:
+                if ntw.nports != n_ports:
+                    messagebox.showwarning("Error", "All networks must have same number of ports")
+                    return None
+                if len(ntw.f) != len(ref_freqs) or not np.allclose(ntw.f, ref_freqs, rtol=1e-6):
+                    messagebox.showwarning("Error", "All networks must have same frequency points")
+                    return None
+            
+            avg_s = np.zeros_like(networks[0].s, dtype=complex)
+            for ntw in networks:
+                avg_s += ntw.s
+            avg_s /= len(networks)
+            
+            avg_network = rf.Network()
+            avg_network.s = avg_s
+            avg_network.frequency = networks[0].frequency
+            avg_network.z0 = networks[0].z0
+            
+            return avg_network
+            
+        except Exception as e:
+            return None
+
+
     def _setRegex(self, pattern):
         self.regexPattern.set(pattern)
         self._updRegexPlot()
@@ -988,10 +1196,10 @@ class App(tk.Tk):
 
             if not v.get() or value is None:
                 continue
-
             ext = Path(p).suffix.lower()
+            lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
             try:
-                if ext in ['.s1p', '.s2p', '.s3p']:
+                if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
                     ntw_full = d.get('ntwk_full')
                     if ntw_full is None:
                         ntw_full = loadFile(p)
@@ -1294,9 +1502,9 @@ class App(tk.Tk):
             for v, p, d in self.fls:
                 if not v.get(): continue
                 ext = Path(p).suffix.lower()
-                lbl = Path(p).stem
+                lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
                 try:
-                    if ext in ['.s1p', '.s2p', '.s3p']:
+                    if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
                         ntw_full = d.get('ntwk_full')
                         cached_range = d.get('cached_range')
                         
@@ -1371,9 +1579,9 @@ class App(tk.Tk):
         for v, p, d in self.fls:
             if not v.get(): continue
             ext = Path(p).suffix.lower()
-            lbl = Path(p).stem
+            lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
             try:
-                if ext in ['.s1p', '.s2p', '.s3p']:
+                if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
                     ntw_full = d.get('ntwk_full')
                     cached_range = d.get('cached_range')
                     
@@ -1434,10 +1642,11 @@ class App(tk.Tk):
         
         for v, p, d in self.fls:
             if not v.get(): continue
+
             ext = Path(p).suffix.lower()
-            lbl = Path(p).stem
+            lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
             try:
-                if ext in ['.s1p', '.s2p', '.s3p']:
+                if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
                     ntw_full = d.get('ntwk_full')
                     if ntw_full is None:
                         ntw_full = loadFile(p)
@@ -1482,9 +1691,9 @@ class App(tk.Tk):
             for v, p, d in self.fls:
                 if not v.get(): continue
                 ext = Path(p).suffix.lower()
-                lbl = Path(p).stem
+                lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
                 try:
-                    if ext in ['.s1p', '.s2p', '.s3p']:
+                    if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
                         ntw_full = d.get('ntwk_full')
                         if ntw_full is None:
                             ntw_full = loadFile(p)
@@ -1714,7 +1923,14 @@ class App(tk.Tk):
             messagebox.showinfo("No selection", "No files selected for deletion")
             return
             
-        if messagebox.askyesno("Confirm deletion", f"Remove {len(toDelete)} selected files from the list?"):
+        avg_count = sum(1 for i in toDelete if self.fls[i][2].get('is_average', False))
+        file_count = len(toDelete) - avg_count
+        
+        msg = f"Remove {len(toDelete)} items from the list?"
+        if avg_count > 0:
+            msg = f"Remove {file_count} files and {avg_count} averages from the list?"
+            
+        if messagebox.askyesno("Confirm deletion", msg):
             remaining_files = []
             for i, file_data in enumerate(self.fls):
                 if i not in toDelete:
@@ -1727,13 +1943,18 @@ class App(tk.Tk):
             
             for v, p, d in self.fls:
                 v.set(True)
-                chk = ttk.Checkbutton(self.fbox, text=Path(p).name, variable=v, command=self._updAll)
-                chk.pack(anchor="w")
+                if d.get('is_average', False):
+                    name = Path(p).name if not p.startswith("<") else f"[AVG] {p[1:-1].replace('average_', 'average_')}"
+                    chk = tk.Checkbutton(self.fbox, text=name, variable=v, command=self._updAll, fg="blue", activeforeground="blue")
+                    chk.pack(anchor="w")
+                else:
+                    chk = ttk.Checkbutton(self.fbox, text=Path(p).name, variable=v, command=self._updAll)
+                    chk.pack(anchor="w")
                 chk.bind("<Button-3>", lambda e, path=p: self._showStyleMenu(e, path))
             
             self.fileListCanvas.configure(scrollregion=self.fileListCanvas.bbox("all"))
             self._updAll()
-            messagebox.showinfo("Files removed", f"Removed {len(toDelete)} files from the list")
+            messagebox.showinfo("Files removed", f"Removed {len(toDelete)} items from the list")
 
     def _parseFrequencyFile(self, filepath):
         ranges = []
@@ -2670,7 +2891,7 @@ class App(tk.Tk):
         
         self.txt.config(state=tk.DISABLED)
 
-    def _cross_correlation(self, s1, s2, normalize=True):
+    def _cross_correlation(self, s1, s2, normalize=True, max_lag=None):
         if normalize:
             s1 = (s1 - np.mean(s1)) / (np.std(s1) + 1e-10)
             s2 = (s2 - np.mean(s2)) / (np.std(s2) + 1e-10)
@@ -2682,13 +2903,19 @@ class App(tk.Tk):
         corr = np.concatenate([corr[-(len(s2)-1):], corr[:len(s1)]])
         
         lags = np.arange(-len(s2) + 1, len(s1))
+        
+        if max_lag is not None and max_lag > 0:
+            valid_indices = np.abs(lags) <= max_lag
+            corr = corr[valid_indices]
+            lags = lags[valid_indices]
+        
         best_idx = np.argmax(corr)
         
         if normalize:
             corr = corr / (np.sqrt(np.sum(s1**2) * np.sum(s2**2)) + 1e-10)
             
         return lags[best_idx], corr[best_idx]
-    
+
     def _updCrossCorrPlot(self):
         self.figCC.clear()
         self.axCC = self.figCC.add_subplot(111)
@@ -2975,7 +3202,8 @@ class App(tk.Tk):
                     else: M[i,j]=0; L[i,j]=0
                     continue
                 if metric=="xcorr":
-                    lag,val=self._cross_correlation(sigs_aligned[i],sigs_aligned[j],normalize)
+                    max_lag_val = self.maxLag.get() if self.maxLag.get() > 0 else None
+                    lag,val=self._cross_correlation(sigs_aligned[i],sigs_aligned[j],normalize, max_lag_val)
                     M[i,j]=M[j,i]=val; L[i,j]=L[j,i]=lag
                 elif metric=="l1":
                     val=self._l1_distance(sigs_aligned[i],sigs_aligned[j],normalize)
