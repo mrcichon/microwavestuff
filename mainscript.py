@@ -20,10 +20,10 @@ from scipy.ndimage import convolve1d
 
 # TODO: 0. FUCKING MATPLOTLIB CHRIST ALMIGHTY
 # TODO: 1. caching
-# TODO: 2. fix importing to regex ie. no overwriting
+# DONE: 2. fix importing to regex ie. no overwriting
 # DONE: 3. replace frechet with crosscorelation?
 # TODO: 4. replace file loading to c
-# TODO: 5. SIMD based optimalizations?
+# DUMB: 5. SIMD based optimalizations? no, numpy is already optimized and we're not doing live streaming of sparams data
 # TODO: 6. integrate sparameters curves
 # DONE: 7. Make new submenu for shape / maybe stats?
 # TODO: 8. add basic stats per sparameter file
@@ -1700,10 +1700,47 @@ class App(tk.Tk):
         if not self.regexRanges:
             messagebox.showinfo("No data", "No regex ranges available. Run regex analysis first.")
             return
-            
-        key = f"regex_{self.regexParam.get()}"
-        self.overlapData[key] = [(s/1e9, e/1e9) for s, e in self.regexRanges]
-        self._updOverlapPlot()
+        
+        dialog = tk.Toplevel(self)
+        dialog.title("Name this import")
+        dialog.geometry("300x100")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        ttk.Label(dialog, text="Import name:").pack(pady=10)
+        name_var = tk.StringVar(value=f"regex_{self.regexParam.get()}_{len(self.overlapData)+1}")
+        entry = ttk.Entry(dialog, textvariable=name_var, width=30)
+        entry.pack(pady=5)
+        entry.select_range(0, tk.END)
+        entry.focus()
+        
+        def ok():
+            name = name_var.get().strip()
+            if not name:
+                messagebox.showwarning("Invalid name", "Please enter a name")
+                return
+            if name in self.overlapData:
+                if not messagebox.askyesno("Overwrite?", f"'{name}' already exists. Overwrite?"):
+                    return
+            self.overlapData[name] = [(s/1e9, e/1e9) for s, e in self.regexRanges]
+            dialog.destroy()
+            self._updOverlapPlot()
+        
+        def cancel():
+            dialog.destroy()
+        
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+        ttk.Button(button_frame, text="OK", command=ok).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=cancel).pack(side=tk.LEFT, padx=5)
+        
+        entry.bind("<Return>", lambda e: ok())
+        entry.bind("<Escape>", lambda e: cancel())
+        
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
 
     def _findOverlaps(self, r1, r2):
         overlaps = []
