@@ -603,6 +603,33 @@ class App(tk.Tk):
         ttk.Button(btnFrame, text="Export as CSV", command=self._exportShapeCSV).pack(side=tk.LEFT)
         self.shapeData = None
 
+        self.integBox = ttk.Frame(lfrm)
+        ttk.Label(self.integBox, text="S-parameters to integrate:").pack(anchor="w", pady=(5,0))
+        sparamFrame = ttk.Frame(self.integBox)
+        sparamFrame.pack(anchor="w", pady=(2,0))
+        self.integS11 = tk.BooleanVar(value=True)
+        self.integS12 = tk.BooleanVar(value=False)
+        self.integS21 = tk.BooleanVar(value=True)
+        self.integS22 = tk.BooleanVar(value=False)
+        ttk.Checkbutton(sparamFrame, text="S11", variable=self.integS11, command=self._updIntegPlot).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(sparamFrame, text="S12", variable=self.integS12, command=self._updIntegPlot).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(sparamFrame, text="S21", variable=self.integS21, command=self._updIntegPlot).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(sparamFrame, text="S22", variable=self.integS22, command=self._updIntegPlot).pack(side=tk.LEFT, padx=2)
+
+        ttk.Label(self.integBox, text="Integration scale:").pack(anchor="w", pady=(5,0))
+        scaleFrame = ttk.Frame(self.integBox)
+        scaleFrame.pack(anchor="w", pady=(2,0))
+        self.integScale = tk.StringVar(value="db")
+        ttk.Radiobutton(scaleFrame, text="dB scale", value="db", variable=self.integScale, command=self._updIntegPlot).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(scaleFrame, text="Linear scale", value="linear", variable=self.integScale, command=self._updIntegPlot).pack(side=tk.LEFT, padx=2)
+
+        btnFrame = ttk.Frame(self.integBox)
+        btnFrame.pack(anchor="w", pady=(5,0))
+        ttk.Button(btnFrame, text="Export results", command=self._exportIntegResults).pack(side=tk.LEFT, padx=(0,5))
+        ttk.Button(btnFrame, text="Export as CSV", command=self._exportIntegCSV).pack(side=tk.LEFT)
+
+        self.integData = None
+
         nb = ttk.Notebook(self)
         nb.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         self.nb = nb
@@ -786,6 +813,14 @@ class App(tk.Tk):
         self.tbSC.update()
         self.tbSC.pack(fill=tk.X)
 
+        frmI = ttk.Frame(nb)
+        nb.add(frmI, text="Integration")
+        self.figI, self.axI = plt.subplots(figsize=(10,8))
+        self.cvI = FigureCanvasTkAgg(self.figI, master=frmI)
+        self.cvI.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.tbI = NavigationToolbar2Tk(self.cvI, frmI)
+        self.tbI.update()
+        self.tbI.pack(fill=tk.X)
 
         self.cv.mpl_connect('button_press_event', self._onClick)
         self.cvT.mpl_connect('button_press_event', self._onClick)
@@ -1065,6 +1100,7 @@ class App(tk.Tk):
             self.rbox.pack_forget()
             self.shapeBox.pack_forget()
             self.gateBox.pack_forget()
+            self.integBox.pack_forget()
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
@@ -1083,6 +1119,7 @@ class App(tk.Tk):
             self.overlapBox.pack_forget()
             self.shapeBox.pack_forget()
             self.varBox.pack_forget()
+            self.integBox.pack_forget()
             self.trainBox.pack_forget()
             self.rbox.pack(anchor="w", pady=(2,0))
             self.gateBox.pack(anchor="w", pady=(8,0))
@@ -1104,6 +1141,7 @@ class App(tk.Tk):
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
+            self.integBox.pack_forget()
             self.shapeBox.pack_forget()
             self.regexBox.pack(anchor="w", pady=(2,0))
             self._updRegexPlot()
@@ -1113,6 +1151,7 @@ class App(tk.Tk):
             self.rbox.pack_forget()
             self.gateBox.pack_forget()
             self.regexBox.pack_forget()
+            self.integBox.pack_forget()
             self.shapeBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
@@ -1123,6 +1162,7 @@ class App(tk.Tk):
             self.cbox.pack_forget()
             self.rbox.pack_forget()
             self.shapeBox.pack_forget()
+            self.integBox.pack_forget()
             self.gateBox.pack_forget()
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
@@ -1151,6 +1191,7 @@ class App(tk.Tk):
             self.regexBox.pack_forget()
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
+            self.integBox.pack_forget()
             self.shapeBox.pack_forget()
             self.trainBox.pack(anchor="w", pady=(2,0))
             self.txt.config(state=tk.NORMAL)
@@ -1177,8 +1218,21 @@ class App(tk.Tk):
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
             self.trainBox.pack_forget()
+            self.integBox.pack_forget()
             self.shapeBox.pack(anchor="w", pady=(2,0))
             self._updShapePlot()
+        elif tabTxt == "Integration":
+            self.tab = "integration"
+            self.cbox.pack_forget()
+            self.rbox.pack_forget()
+            self.gateBox.pack_forget()
+            self.regexBox.pack_forget()
+            self.overlapBox.pack_forget()
+            self.varBox.pack_forget()
+            self.trainBox.pack_forget()
+            self.shapeBox.pack_forget()
+            self.integBox.pack(anchor="w", pady=(2,0))
+            self._updIntegPlot()
 
 
     def _addFiles(self):
@@ -2994,6 +3048,168 @@ class App(tk.Tk):
             with pd.ExcelWriter(fn.replace('.csv','.xlsx'), engine='xlsxwriter') as w:
                 df.to_excel(w, sheet_name='Value'); df_lag.to_excel(w, sheet_name='Lag')
         messagebox.showinfo("Export complete", f"Matrix saved to {fn}")
+
+
+    def _updIntegPlot(self):
+        self.figI.clear()
+        self.axI = self.figI.add_subplot(111)
+        
+        fmin = self.fmin.get()
+        fmax = self.fmax.get()
+        sstr = f"{fmin}-{fmax}ghz"
+        
+        params_to_integrate = []
+        if self.integS11.get(): params_to_integrate.append('s11')
+        if self.integS12.get(): params_to_integrate.append('s12')
+        if self.integS21.get(): params_to_integrate.append('s21')
+        if self.integS22.get(): params_to_integrate.append('s22')
+        
+        if not params_to_integrate:
+            self.axI.text(0.5, 0.5, "Select S-parameters to integrate", 
+                         ha="center", va="center", fontsize=12, color="gray")
+            self.axI.set_xticks([])
+            self.axI.set_yticks([])
+            self.cvI.draw()
+            return
+        
+        scale_type = self.integScale.get()
+        results = {}
+        
+        for v, p, d in self.fls:
+            if not v.get():
+                continue
+                
+            ext = Path(p).suffix.lower()
+            if ext not in ['.s1p', '.s2p', '.s3p']:
+                continue
+                
+            try:
+                ntw_full = d.get('ntwk_full')
+                cached_range = d.get('cached_range')
+                
+                if ntw_full is None:
+                    ntw_full = loadFile(p)
+                    d['ntwk_full'] = ntw_full
+                
+                if cached_range != sstr:
+                    ntw = ntw_full[sstr]
+                    d['ntwk'] = ntw
+                    d['cached_range'] = sstr
+                else:
+                    ntw = d['ntwk']
+                
+                file_name = Path(p).stem
+                if file_name not in results:
+                    results[file_name] = {}
+                
+                freq = ntw.f
+                
+                for param in params_to_integrate:
+                    s_data = getattr(ntw, param)
+                    
+                    if scale_type == 'db':
+                        values = s_data.s_db.flatten()
+                    else:
+                        values = np.abs(s_data.s.flatten())
+                    
+                    integral = np.trapz(values, freq)
+                    results[file_name][param] = integral
+                    
+            except Exception as e:
+                pass
+        
+        if not results:
+            self.axI.text(0.5, 0.5, "No valid data to integrate", 
+                         ha="center", va="center", fontsize=12, color="gray")
+            self.axI.set_xticks([])
+            self.axI.set_yticks([])
+            self.cvI.draw()
+            return
+        
+        self.integData = results
+        
+        n_files = len(results)
+        n_params = len(params_to_integrate)
+        x = np.arange(n_files)
+        width = 0.8 / n_params
+        
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+        
+        for i, param in enumerate(params_to_integrate):
+            values = [results[fname].get(param, 0) for fname in results.keys()]
+            self.axI.bar(x + i * width, values, width, label=param.upper(), color=colors[i])
+        
+        self.axI.set_xlabel('Files')
+        self.axI.set_ylabel(f'Integrated value ')
+        self.axI.set_title(f'Integration of S-parameters ({scale_type} scale)')
+        self.axI.set_xticks(x + width * (n_params - 1) / 2)
+        self.axI.set_xticklabels(results.keys(), rotation=45, ha='right')
+        self.axI.legend()
+        self.axI.grid(True, alpha=0.3)
+        
+        self.figI.tight_layout()
+        self.cvI.draw()
+        
+        self.txt.config(state=tk.NORMAL)
+        self.txt.delete(1.0, tk.END)
+        self.txt.insert(tk.END, f"Integration Results\n")
+        self.txt.insert(tk.END, f"Scale: {scale_type}\n")
+        self.txt.insert(tk.END, f"Frequency range: {fmin}-{fmax} GHz\n")
+        self.txt.insert(tk.END, "-" * 40 + "\n")
+        
+        for fname, params in results.items():
+            self.txt.insert(tk.END, f"\n{fname}:\n")
+            for param, value in params.items():
+                self.txt.insert(tk.END, f"  {param.upper()}: {value:.3e}\n")
+        
+        self.txt.config(state=tk.DISABLED)
+
+    def _exportIntegResults(self):
+        if self.integData is None:
+            messagebox.showinfo("No data", "No integration data to export")
+            return
+            
+        filename = filedialog.asksaveasfilename(
+            title="Save integration results",
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        
+        if not filename:
+            return
+            
+        with open(filename, 'w') as f:
+            f.write("# S-parameter Integration Results\n")
+            f.write(f"# Scale: {self.integScale.get()}\n")
+            f.write(f"# Frequency range: {self.fmin.get()}-{self.fmax.get()} GHz\n")
+            f.write("# Format: filename parameter integral_value\n")
+            f.write("#\n")
+            
+            for fname, params in self.integData.items():
+                for param, value in params.items():
+                    f.write(f"{fname}\t{param}\t{value:.6e}\n")
+        
+        messagebox.showinfo("Export complete", f"Results saved to {filename}")
+
+    def _exportIntegCSV(self):
+        if self.integData is None:
+            messagebox.showinfo("No data", "No integration data to export")
+            return
+            
+        filename = filedialog.asksaveasfilename(
+            title="Save integration results as CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        
+        if not filename:
+            return
+            
+        df = pd.DataFrame.from_dict(self.integData, orient='index')
+        df.to_csv(filename)
+        
+        messagebox.showinfo("Export complete", f"Results saved to {filename}")
+
 
     def _showStyleMenu(self, event, filepath):
         file_data = None
