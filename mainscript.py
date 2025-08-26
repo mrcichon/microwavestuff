@@ -627,6 +627,18 @@ class App(tk.Tk):
         btnFrame.pack(anchor="w", pady=(5,0))
         ttk.Button(btnFrame, text="Export results", command=self._exportIntegResults).pack(side=tk.LEFT, padx=(0,5))
         ttk.Button(btnFrame, text="Export as CSV", command=self._exportIntegCSV).pack(side=tk.LEFT)
+        ttk.Label(self.integBox, text="Sort by:").pack(anchor="w", pady=(5,0))
+        sortFrame = ttk.Frame(self.integBox)
+        sortFrame.pack(anchor="w", pady=(2,0))
+        self.integSortBy = tk.StringVar(value="name")
+        ttk.Radiobutton(sortFrame, text="File name", value="name", variable=self.integSortBy, command=self._updIntegPlot).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(sortFrame, text="S11", value="s11", variable=self.integSortBy, command=self._updIntegPlot).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(sortFrame, text="S12", value="s12", variable=self.integSortBy, command=self._updIntegPlot).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(sortFrame, text="S21", value="s21", variable=self.integSortBy, command=self._updIntegPlot).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(sortFrame, text="S22", value="s22", variable=self.integSortBy, command=self._updIntegPlot).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(sortFrame, text="Total", value="total", variable=self.integSortBy, command=self._updIntegPlot).pack(side=tk.LEFT, padx=2)
+        self.integSortAsc = tk.BooleanVar(value=True)
+        ttk.Checkbutton(sortFrame, text="Ascending", variable=self.integSortAsc, command=self._updIntegPlot).pack(side=tk.LEFT, padx=(10,2))
 
         self.integData = None
 
@@ -3103,7 +3115,9 @@ class App(tk.Tk):
                     results[file_name] = {}
                 
                 freq = ntw.f
-                
+
+                from scipy.interpolate import CubicSpline
+
                 for param in params_to_integrate:
                     s_data = getattr(ntw, param)
                     
@@ -3111,10 +3125,33 @@ class App(tk.Tk):
                         values = s_data.s_db.flatten()
                     else:
                         values = np.abs(s_data.s.flatten())
-                    
-                    integral = np.trapz(values, freq)
+
+                    # freq_ghz = freq / 1e9
+                    # cs = CubicSpline(freq_ghz, values)
+                    # integral = cs.integrate(freq_ghz[0], freq_ghz[-1])
+
+                    # x_norm = np.linspace(0, 1, len(values))
+                    # cs = CubicSpline(x_norm, values)
+                    # integral = cs.integrate(0, 1)
+
+                    indices = np.arange(len(values))
+                    cs = CubicSpline(indices, values)
+                    integral = cs.integrate(indices[0], indices[-1])
+
                     results[file_name][param] = integral
-                    
+
+                # for param in params_to_integrate:
+                #    s_data = getattr(ntw, param)
+
+                #    if scale_type == 'db':
+                #       values = s_data.s_db.flatten()
+                #    else:
+                #       values = np.abs(s_data.s.flatten())
+
+                #   indices = np.arange(len(values))
+                #   integral = np.trapz(values, indices)
+
+                    #results[file_name][param] = integral                                        
             except Exception as e:
                 pass
         
@@ -3126,24 +3163,43 @@ class App(tk.Tk):
             self.cvI.draw()
             return
         
-        self.integData = results
+        sort_by = self.integSortBy.get()
+        ascending = self.integSortAsc.get()
         
-        n_files = len(results)
+        if sort_by == 'name':
+            sorted_items = sorted(results.items(), key=lambda x: x[0], reverse=not ascending)
+        elif sort_by == 'total':
+            sorted_items = sorted(results.items(), 
+                                key=lambda x: sum(x[1].values()), 
+                                reverse=not ascending)
+        else:
+            sorted_items = sorted(results.items(), 
+                                key=lambda x: x[1].get(sort_by, 0), 
+                                reverse=not ascending)
+
+        sorted_names = [item[0] for item in sorted_items]
+        
+        self.integData = results
+
+        n_files = len(sorted_names)
         n_params = len(params_to_integrate)
         x = np.arange(n_files)
         width = 0.8 / n_params
-        
+
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
-        
+
         for i, param in enumerate(params_to_integrate):
-            values = [results[fname].get(param, 0) for fname in results.keys()]
+            values = [results[fname].get(param, 0) for fname in sorted_names]
             self.axI.bar(x + i * width, values, width, label=param.upper(), color=colors[i])
-        
+
         self.axI.set_xlabel('Files')
-        self.axI.set_ylabel(f'Integrated value ')
-        self.axI.set_title(f'Integration of S-parameters ({scale_type} scale)')
+        self.axI.set_ylabel(f'Integrated value')
+
+        sort_label = "name" if sort_by == "name" else f"{sort_by.upper()} {'↑' if ascending else '↓'}"
+        self.axI.set_title(f'Integration of S-parameters ({scale_type} scale, sorted by {sort_label})')
+
         self.axI.set_xticks(x + width * (n_params - 1) / 2)
-        self.axI.set_xticklabels(results.keys(), rotation=45, ha='right')
+        self.axI.set_xticklabels(sorted_names, rotation=45, ha='right')
         self.axI.legend()
         self.axI.grid(True, alpha=0.3)
         
@@ -3155,14 +3211,20 @@ class App(tk.Tk):
         self.txt.insert(tk.END, f"Integration Results\n")
         self.txt.insert(tk.END, f"Scale: {scale_type}\n")
         self.txt.insert(tk.END, f"Frequency range: {fmin}-{fmax} GHz\n")
+        self.txt.insert(tk.END, f"Sort: {sort_label}\n")
         self.txt.insert(tk.END, "-" * 40 + "\n")
         
-        for fname, params in results.items():
+        for fname in sorted_names:
+            params = results[fname]
             self.txt.insert(tk.END, f"\n{fname}:\n")
+            total = sum(params.values())
             for param, value in params.items():
                 self.txt.insert(tk.END, f"  {param.upper()}: {value:.3e}\n")
+            if len(params) > 1:
+                self.txt.insert(tk.END, f"  TOTAL: {total:.3e}\n")
         
         self.txt.config(state=tk.DISABLED)
+
 
     def _exportIntegResults(self):
         if self.integData is None:
