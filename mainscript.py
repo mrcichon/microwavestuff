@@ -33,7 +33,7 @@ from scipy.ndimage import convolve1d
 # TODO: 12. file parsing is bad no good fix that
 # TODO: 13. numba jit potentially
 # TODO: 14. might have to rewrite parts in c
-# TODO: 15. averages of sparams
+# DONE: 15. averages of sparams
 
 
 
@@ -976,7 +976,8 @@ class App(tk.Tk):
             'is_average': True,
             'source_files': [self.fls[i][1] for i in indices],
             'line_color': '#0080ff',
-            'line_width': 2.0
+            'line_width': 2.0,
+            'custom_name': name
         }
         
         chk.bind("<Button-3>", lambda e: self._showStyleMenu(e, avg_path))
@@ -1023,7 +1024,8 @@ class App(tk.Tk):
             'is_average': True,
             'source_files': files,
             'line_color': '#0080ff',
-            'line_width': 2.0
+            'line_width': 2.0,
+            'custom_name': name
         }
         
         chk.bind("<Button-3>", lambda e: self._showStyleMenu(e, avg_path))
@@ -1185,7 +1187,10 @@ class App(tk.Tk):
         all_files_info = []
 
         for v, p, d in self.fls:
-            fname = Path(p).stem
+            if d.get('is_average', False) and d.get('custom_name'):
+                fname = d.get('custom_name')
+            else:
+                fname = Path(p).stem
             value = self._extractValue(fname, pattern)
 
             if v.get():
@@ -1502,7 +1507,10 @@ class App(tk.Tk):
             for v, p, d in self.fls:
                 if not v.get(): continue
                 ext = Path(p).suffix.lower()
-                lbl = Path(p).stem
+                if d.get('is_average', False) and d.get('custom_name'):
+                    lbl = d['custom_name']
+                else:
+                    lbl = Path(p).stem
                 try:
                     if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
                         ntw_full = d.get('ntwk_full')
@@ -1579,7 +1587,10 @@ class App(tk.Tk):
         for v, p, d in self.fls:
             if not v.get(): continue
             ext = Path(p).suffix.lower()
-            lbl = Path(p).stem
+            if d.get('is_average', False) and d.get('custom_name'):
+                lbl = d['custom_name']
+            else:
+                lbl = Path(p).stem
             try:
                 if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
                     ntw_full = d.get('ntwk_full')
@@ -1643,7 +1654,10 @@ class App(tk.Tk):
         for v, p, d in self.fls:
             if not v.get(): continue
             ext = Path(p).suffix.lower()
-            lbl = Path(p).stem
+            if d.get('is_average', False) and d.get('custom_name'):
+                lbl = d['custom_name']
+            else:
+                lbl = Path(p).stem
             try:
                 if ext in ['.s1p', '.s2p', '.s3p'] or d.get('is_average', True):
                     ntw_full = d.get('ntwk_full')
@@ -1690,7 +1704,10 @@ class App(tk.Tk):
             for v, p, d in self.fls:
                 if not v.get(): continue
                 ext = Path(p).suffix.lower()
-                lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
+                if d.get('is_average', False) and d.get('custom_name'):
+                    lbl = d['custom_name']
+                else:
+                    lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
                 try:
                     if ext in ['.s1p', '.s2p', '.s3p'] or d.get('is_average', True):
                         ntw_full = d.get('ntwk_full')
@@ -2205,7 +2222,10 @@ class App(tk.Tk):
             if not v.get():
                 continue
             ext = Path(p).suffix.lower()
-            lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
+            if d.get('is_average', False) and d.get('custom_name'):
+                lbl = d['custom_name']
+            else:
+                lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
             if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
 
                 try:
@@ -2954,7 +2974,12 @@ class App(tk.Tk):
                 freq = ntw.f
                 
                 files_data.append((s_data, freq))
-                file_names.append(Path(p).stem)
+                
+                if d.get('is_average', False) and d.get('custom_name'):
+                    filename_custom = d['custom_name']
+                    file_names.append(filename_custom)
+                else:
+                    file_names.append(Path(p).stem)
                 
             except Exception:
                 pass
@@ -3174,7 +3199,10 @@ class App(tk.Tk):
         for v,p,d in self.fls:
             if not v.get(): continue
             ext=Path(p).suffix.lower()
-            lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
+            if d.get('is_average', False) and d.get('custom_name'):
+                lbl=d['custom_name']
+            else:
+                lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
             if d.get('is_average', False) or ext in ['.s1p','.s2p','.s3p']:
                 try:
                     ntw_full=d.get('ntwk_full'); cached=d.get('cached_range')
@@ -3185,7 +3213,7 @@ class App(tk.Tk):
                     else:
                         ntw=d['ntwk']
                     s=getattr(ntw,param).s_db.flatten()
-                    sigs.append(s); freqs.append(ntw.f); names.append(Path(p).stem)
+                    sigs.append(s); freqs.append(ntw.f); names.append(lbl)
                 except: pass
         n=len(sigs)
         if n<2:
@@ -3318,7 +3346,10 @@ class App(tk.Tk):
             if not v.get():
                 continue
             ext = Path(p).suffix.lower()
-            lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
+            if d.get('is_average', False) and d.get('custom_name'):
+                lbl = d['custom_name']
+            else:
+                lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
             if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
                 
                 try:
@@ -3336,7 +3367,10 @@ class App(tk.Tk):
                     else:
                         ntw = d['ntwk']
                     
-                    file_name = Path(p).stem
+                    if d.get('is_average', False) and d.get('custom_name'):
+                        file_name = d['custom_name']
+                    else:
+                        file_name = Path(p).stem
                     if file_name not in results:
                         results[file_name] = {}
                     
