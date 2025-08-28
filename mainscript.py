@@ -114,20 +114,43 @@ if rf.__version__ > "0.17.0":
 MAXF = 4
 MINF = 0.4
 
+
 def loadFile(p):
-    with open(p, "r", encoding="utf-8") as f:
-        l = f.readlines()
+    print(f"loadFile called with: {p}")
+    
+    encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
+    l = None
+    
+    for encoding in encodings:
+        try:
+            with open(p, "r", encoding=encoding) as f:
+                l = f.readlines()
+                break
+        except UnicodeDecodeError as e:
+            continue
+    
+    if l is None:
+        with open(p, "r", encoding="utf-8", errors="replace") as f:
+            l = f.readlines()
+    
     fx = []
     for ln in l:
         if ln.lstrip().startswith(("!", "#")):
             fx.append(ln)
         else:
             fx.append(ln.replace(",", "."))
+    
     t = tempfile.NamedTemporaryFile("w+", delete=False, suffix=Path(p).suffix, encoding="utf-8")
     t.writelines(fx)
     t.flush()
     t.close()
-    return rf.Network(t.name)
+    
+    try:
+        network = rf.Network(t.name)
+        return network
+    except Exception as e:
+        raise
+
 
 class ValidatedDoubleVar(tk.DoubleVar):
     def __init__(self, *args, **kwargs):
@@ -1470,6 +1493,7 @@ class App(tk.Tk):
         )
         for p in pth:
             if not any(p == f[1] for f in self.fls):
+                print("Loading file:", p)
                 v = tk.BooleanVar(value=True)
                 chk = ttk.Checkbutton(self.fbox, text=Path(p).name, variable=v, command=self._updAll)
                 chk.pack(anchor="w")
