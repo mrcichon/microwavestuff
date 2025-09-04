@@ -244,7 +244,15 @@ class App(tk.Tk):
 
         self.maxLag = tk.IntVar(value=5)
         self.avgCounter = 0
-        
+
+        self.shapeAdaptive = tk.BooleanVar(value=False)
+        self.shapeAlpha = tk.DoubleVar(value=2.0)
+        self.shapeSigma = tk.IntVar(value=5)
+        self.shapeGamma = tk.DoubleVar(value=2.0)
+        self.shapeWmin = tk.DoubleVar(value=0.1)
+        self.shapeActivityType = tk.StringVar(value="nonincreasing")
+        self.shapeShowActivity = tk.BooleanVar(value=False)
+                
         try:
             import water_pred
             import torch
@@ -297,8 +305,15 @@ class App(tk.Tk):
         btn4.pack(anchor="w", pady=(0,10))
         
         self.legendVisible = tk.BooleanVar(value=True)
+
+        self.legendOnPlot = tk.BooleanVar(value=False)
+
         ttk.Checkbutton(lfrm, text="Show legend panel", variable=self.legendVisible, 
                        command=self._toggleLegend).pack(anchor="w", pady=(0,10))
+
+        ttk.Checkbutton(lfrm, text="Legend on plot", variable=self.legendOnPlot,
+                       command=self._updAll).pack(anchor="w", pady=(0,10))
+
         
         fileListFrame = ttk.Frame(lfrm)
         fileListFrame.pack(anchor="w", fill=tk.BOTH, pady=(0,10))
@@ -625,8 +640,32 @@ class App(tk.Tk):
         ttk.Checkbutton(self.shapeBox, text="Normalize", variable=self.shapeNormalize, command=self._updShapePlot).pack(anchor="w", pady=(5,0))
         mt = ttk.Frame(self.shapeBox); mt.pack(anchor="w", pady=(5,0))
         self.shapeMetric = tk.StringVar(value="xcorr")
-        for t,v in (("Cross-corr","xcorr"),("L1","l1"),("L2","l2")):
+        for t,v in (("Cross-corr","xcorr"),("L1","l1"),("L2","l2"),("Adaptive L1","al1"),("Adaptive L2","al2")):
             ttk.Radiobutton(mt, text=t, value=v, variable=self.shapeMetric, command=self._updShapePlot).pack(side=tk.LEFT, padx=4)
+
+        adaptFrame = ttk.LabelFrame(self.shapeBox, text="Adaptive Parameters")
+        adaptFrame.pack(anchor="w", pady=(5,0), fill="x")
+        p1 = ttk.Frame(adaptFrame); p1.pack(anchor="w")
+        ttk.Label(p1, text="α:").pack(side=tk.LEFT)
+        ttk.Spinbox(p1, from_=1.0, to=4.0, increment=0.5, textvariable=self.shapeAlpha, width=6, command=self._updShapePlot).pack(side=tk.LEFT, padx=(2,10))
+        ttk.Label(p1, text="σ:").pack(side=tk.LEFT)
+        ttk.Spinbox(p1, from_=2, to=20, textvariable=self.shapeSigma, width=6, command=self._updShapePlot).pack(side=tk.LEFT, padx=(2,10))
+        ttk.Label(p1, text="γ:").pack(side=tk.LEFT)
+        ttk.Spinbox(p1, from_=0.5, to=4.0, increment=0.5, textvariable=self.shapeGamma, width=6, command=self._updShapePlot).pack(side=tk.LEFT, padx=(2,10))
+        ttk.Label(p1, text="w_min:").pack(side=tk.LEFT)
+        ttk.Spinbox(p1, from_=0.0, to=1.0, increment=0.1, textvariable=self.shapeWmin, width=6, command=self._updShapePlot).pack(side=tk.LEFT, padx=(2,0))
+        p2 = ttk.Frame(adaptFrame); p2.pack(anchor="w", pady=(3,3))
+        ttk.Radiobutton(p2, text="Bidirectional", value="bidirectional", variable=self.shapeActivityType, command=self._updShapePlot).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(p2, text="Non-increasing only", value="nonincreasing", variable=self.shapeActivityType, command=self._updShapePlot).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(p2, text="Show activity", variable=self.shapeShowActivity, command=self._updShapePlot).pack(side=tk.LEFT, padx=(20,2))
+
+        lagFrame = ttk.Frame(self.shapeBox)
+        lagFrame.pack(anchor="w", pady=(5,0))
+        ttk.Label(lagFrame, text="Max lag (samples):").pack(side=tk.LEFT)
+        lagSpin = ttk.Spinbox(lagFrame, from_=1, to=1000, textvariable=self.maxLag, width=8, command=self._updShapePlot)
+        lagSpin.pack(side=tk.LEFT, padx=(5,0))
+        ttk.Label(lagFrame, text="(0 = no limit)", font=("", 8), foreground="gray").pack(side=tk.LEFT, padx=(5,0))
+
         btnFrame = ttk.Frame(self.shapeBox); btnFrame.pack(anchor="w", pady=(5,0))
         ttk.Button(btnFrame, text="Export matrix", command=self._exportShapeMatrix).pack(side=tk.LEFT, padx=(0,5))
         ttk.Button(btnFrame, text="Export as CSV", command=self._exportShapeCSV).pack(side=tk.LEFT)
@@ -954,7 +993,43 @@ class App(tk.Tk):
         x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
         y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
         dialog.geometry(f"+{x}+{y}")
-    
+
+
+        
+    def _compute_derivatives(self, signals):
+        n_signals, n_points = signals.shape
+        derivs = np.zeros_like(signals)
+        for i in range(n_signals):
+            derivs[i, 1:-1] = (signals[i, 2:] - signals[i, :-2]) / 2
+            derivs[i, 0] = signals[i, 1] - signals[i, 0]
+            derivs[i, -1] = signals[i, -1] - signals[i, -2]
+        return derivs
+
+    def _compute_activity_field(self, derivs, alpha, activity_type):
+        if activity_type == "nonincreasing":
+            activity_contrib = np.where(derivs <= 0, np.abs(derivs)**alpha, 0)
+        else:
+            activity_contrib = np.abs(derivs)**alpha
+            # activity_contrib = np.where(derivs >= 0, np.abs(derivs)**alpha, 0)
+        return np.mean(activity_contrib, axis=0)
+
+    def _gaussian_smooth(self, field, sigma):
+        if sigma == 0:
+            return field
+        from scipy.ndimage import gaussian_filter1d
+        return gaussian_filter1d(field, sigma, mode='reflect')
+
+    def _compute_adaptive_weights(self, activity, gamma, w_min):
+        eps = 1e-10
+        activity_max = np.max(activity) + eps
+        weights = w_min + (1 - w_min) * (activity / activity_max)**gamma
+        weights *= len(weights) / np.sum(weights)
+        return weights
+
+    def _adaptive_distance(self, sig1, sig2, weights, p):
+        diff = np.abs(sig1 - sig2)**p
+        return np.sum(weights * diff)**(1/p)
+        
     def _performAverage(self, indices, name):
         fmin = self.fmin.get()
         fmax = self.fmax.get()
@@ -1337,6 +1412,12 @@ class App(tk.Tk):
         ax.set_title(title)
         ax.grid(True)
 
+        if self.legendOnPlot.get() and legend_items: 
+            handles, labels = ax.get_legend_handles_labels()
+            if labels:
+                ncol = min(5, (len(labels) - 1) // 10 + 1)
+                ax.legend(handles, labels, loc='best', ncol=ncol, fontsize=8, framealpha=0.9)
+
         self.figR.tight_layout()
         self.cvR.draw()
         self._updateLegendPanel(legend_items, 'regex')
@@ -1577,6 +1658,13 @@ class App(tk.Tk):
             ax.set_ylabel(f"|{prm.upper()}| [dB]")
             ax.set_title(f"{prm.upper()} magnitude")
             ax.grid(True)
+
+            if self.legendOnPlot.get() and prm == sel[-1]:  
+                handles, labels = ax.get_legend_handles_labels()
+                if labels:
+                    ncol = min(5, (len(labels) - 1) // 10 + 1)
+                    ax.legend(handles, labels, loc='best', ncol=ncol, fontsize=8, framealpha=0.9)
+
         axes[-1].set_xlabel("Frequency [Hz]")
         self.fig.tight_layout(rect=[0, 0, 1, 1])
         self.cv.draw()
@@ -1671,6 +1759,12 @@ class App(tk.Tk):
         axF.grid(True)
         if axF.get_legend():
             axF.get_legend().remove()
+
+        if self.legendOnPlot.get() and legF:  
+
+            ncol = min(5, (len(legF) - 1) // 10 + 1)
+            axF.legend(legF, loc='best', ncol=ncol, fontsize=8, framealpha=0.9)
+
         if not legF:
             axF.text(0.5, 0.5, "Brak danych", ha="center", va="center", color="gray")
             axF.set_xticks([]); axF.set_yticks([])
@@ -1718,6 +1812,10 @@ class App(tk.Tk):
         axTR.set_xlim(0, 50)
         if axTR.get_legend():
             axTR.get_legend().remove()
+        if self.legendOnPlot.get() and legTR:  
+            ncol = min(5, (len(legTR) - 1) // 10 + 1)
+            axTR.legend(legTR, loc='best', ncol=ncol, fontsize=8, framealpha=0.9)
+
         if not legTR:
             axTR.plot([0, 30], [0, 0], alpha=0)
             axTR.text(0.5, 0.5, "Brak danych / Placeholder", ha="center", va="center", color="gray", transform=axTR.transAxes)
@@ -1768,6 +1866,9 @@ class App(tk.Tk):
         axTG.grid(True)
         if axTG.get_legend():
             axTG.get_legend().remove()
+        if self.legendOnPlot.get() and legTG: 
+            ncol = min(5, (len(lenTG) - 1) // 10 + 1)
+            axTG.legend(legTG, loc='best', ncol=ncol, fontsize=8, framealpha=0.9)
         if not legTG:
             axTG.text(0.5, 0.5, "Brak danych / Placeholder", ha="center", va="center", color="gray", transform=axTG.transAxes)
             axTG.set_xticks([]); axTG.set_yticks([])
@@ -3213,10 +3314,22 @@ class App(tk.Tk):
         
         legendCanvas.configure(scrollregion=legendCanvas.bbox("all"))
 
-
     def _updShapePlot(self):
+        is_adaptive = self.shapeMetric.get() in ["al1", "al2"]
+        for w in self.shapeBox.winfo_children():
+            if isinstance(w, ttk.LabelFrame) and w['text'] == 'Adaptive Parameters':
+                if is_adaptive:
+                    w.pack(anchor="w", pady=(5,0), fill="x")
+                else:
+                    w.pack_forget()
+        
         self.figSC.clear()
-        self.axSC = self.figSC.add_subplot(111)
+        if self.shapeShowActivity.get() and is_adaptive:
+            self.axSC = self.figSC.add_subplot(211)
+            self.axActivity = self.figSC.add_subplot(212)
+        else:
+            self.axSC = self.figSC.add_subplot(111)
+        
         fmin=self.fmin.get(); fmax=self.fmax.get(); sstr=f"{fmin}-{fmax}ghz"
         param=self.shapeParam.get(); normalize=self.shapeNormalize.get(); metric=self.shapeMetric.get()
         sigs=[]; freqs=[]; names=[]
@@ -3245,11 +3358,28 @@ class App(tk.Tk):
             self.axSC.set_xticks([]); self.axSC.set_yticks([])
             self.cvSC.draw(); return
         sigs_aligned, fref = self._align_signals(sigs, freqs)
+        
+        weights = None
+        if is_adaptive:
+            derivs = self._compute_derivatives(sigs_aligned)
+            activity = self._compute_activity_field(derivs, self.shapeAlpha.get(), self.shapeActivityType.get())
+            activity_smooth = self._gaussian_smooth(activity, self.shapeSigma.get())
+            weights = self._compute_adaptive_weights(activity_smooth, self.shapeGamma.get(), self.shapeWmin.get())
+            
+            if self.shapeShowActivity.get():
+                self.axActivity.plot(fref, activity, 'b-', alpha=0.5, label='Raw activity')
+                self.axActivity.plot(fref, activity_smooth, 'r-', label='Smoothed activity')
+                self.axActivity.plot(fref, weights * np.max(activity_smooth) / np.max(weights), 'g-', label='Weights (scaled)')
+                self.axActivity.set_xlabel('Frequency [Hz]')
+                self.axActivity.set_ylabel('Activity / Weight')
+                self.axActivity.legend()
+                self.axActivity.grid(True, alpha=0.3)
+        
         M=np.zeros((n,n)); L=np.zeros((n,n))
         for i in range(n):
             for j in range(i,n):
                 if i==j:
-                    if metric=="xcorr": M[i,j]=1; L[i,j]=0
+                    if metric in ["xcorr","al1","al2"]: M[i,j]=1 if metric=="xcorr" else 0; L[i,j]=0
                     else: M[i,j]=0; L[i,j]=0
                     continue
                 if metric=="xcorr":
@@ -3259,15 +3389,27 @@ class App(tk.Tk):
                 elif metric=="l1":
                     val=self._l1_distance(sigs_aligned[i],sigs_aligned[j],normalize)
                     M[i,j]=M[j,i]=val
-                else:
+                elif metric=="l2":
                     val=self._l2_distance(sigs_aligned[i],sigs_aligned[j],normalize)
                     M[i,j]=M[j,i]=val
+                elif metric=="al1":
+                    val=self._adaptive_distance(sigs_aligned[i],sigs_aligned[j],weights,1)
+                    M[i,j]=M[j,i]=val
+                elif metric=="al2":
+                    val=self._adaptive_distance(sigs_aligned[i],sigs_aligned[j],weights,2)
+                    M[i,j]=M[j,i]=val
+        
         self.shapeData={'matrix':M,'lag':L,'names':names,'param':param,'normalized':normalize,'metric':metric}
+        if weights is not None:
+            self.shapeData['weights'] = weights
+            self.shapeData['activity'] = activity_smooth
+        
         if metric=="xcorr":
             im=self.axSC.imshow(M,cmap='RdBu_r',aspect='auto',interpolation='nearest',vmin=-1,vmax=1)
         else:
-            vmax=np.percentile(M[np.triu_indices(n,1)],95)
+            vmax=np.percentile(M[np.triu_indices(n,1)],95) if n>1 else 1
             im=self.axSC.imshow(M,cmap='RdBu_r',aspect='auto',interpolation='nearest',vmin=0,vmax=vmax if vmax>0 else None)
+        
         self.axSC.set_xticks(range(n)); self.axSC.set_yticks(range(n))
         self.axSC.set_xticklabels(names,rotation=45,ha='right'); self.axSC.set_yticklabels(names)
         for i in range(n):
@@ -3279,14 +3421,20 @@ class App(tk.Tk):
                     tc="white" if (M[i,j]>(np.max(M)*0.6 if np.max(M)>0 else 0)) else "black"
                     txt=f'{M[i,j]:.3f}'
                 self.axSC.text(j,i,txt,ha="center",va="center",color=tc,fontsize=7)
-        cl='Cross-Correlation' if metric=='xcorr' else ('L1 (mean abs diff)' if metric=='l1' else 'L2 (RMS diff)')
-        t=f"{cl} — {param.upper()}" + (" (Normalized)" if normalize else "")
+        
+        metric_names = {"xcorr":"Cross-Correlation", "l1":"L1 Distance", "l2":"L2 Distance", 
+                       "al1":"Adaptive L1", "al2":"Adaptive L2"}
+        t=f"{metric_names.get(metric,metric)} — {param.upper()}" + (" (Normalized)" if normalize else "")
         self.axSC.set_title(t)
         self.figSC.colorbar(im, ax=self.axSC, label=('corr' if metric=='xcorr' else 'distance'))
         self.figSC.tight_layout(); self.cvSC.draw()
+        
         self.txt.config(state=tk.NORMAL); self.txt.delete(1.0, tk.END)
         self.txt.insert(tk.END, "Shape Comparison\n")
         self.txt.insert(tk.END, f"Param: {param.upper()} | Metric: {metric} | Mode: {'Normalized' if normalize else 'Raw'}\n")
+        if is_adaptive:
+            self.txt.insert(tk.END, f"Adaptive params: α={self.shapeAlpha.get():.1f} σ={self.shapeSigma.get()} γ={self.shapeGamma.get():.1f} w_min={self.shapeWmin.get():.2f}\n")
+            self.txt.insert(tk.END, f"Activity: {self.shapeActivityType.get()}\n")
         self.txt.insert(tk.END, f"Files: {n}\n")
         self.txt.insert(tk.END, "-"*40+"\n")
         vals=M[np.triu_indices(n,1)]
@@ -3311,6 +3459,7 @@ class App(tk.Tk):
             for d,f1,f2 in pairs[:5]:
                 self.txt.insert(tk.END, f"  {f1} <-> {f2}: {d:.4f}\n")
         self.txt.config(state=tk.DISABLED)
+
 
     def _exportShapeMatrix(self):
         if self.shapeData is None:
