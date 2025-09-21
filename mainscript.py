@@ -34,6 +34,11 @@ from scipy.ndimage import convolve1d
 # TODO: 13. numba jit potentially
 # TODO: 14. might have to rewrite parts in c
 # DONE: 15. averages of sparams
+# TODO: make averages have different colors
+# TODO: make naming averages not be a major pain in the ass
+# TODO: add local extrema calculation/marking on plots
+# TODO: add linear option to all plots i suppose
+# TODO: maybe make the integration not be retarded - space between curves pairwise
 
 
 
@@ -239,7 +244,19 @@ class App(tk.Tk):
         
         self.markersEnabled = tk.BooleanVar(value=False)
         self.markersEnabledTime = tk.BooleanVar(value=False)
-        
+
+        self.extremaEnabled = tk.BooleanVar(value=False)
+        self.extremaMinima = tk.BooleanVar(value=True)
+        self.extremaMaxima = tk.BooleanVar(value=True)
+        self.extremaRangeMin = ValidatedDoubleVar(value=0.0)
+        self.extremaRangeMax = ValidatedDoubleVar(value=10.0)
+        self.extremaLines = []
+        self.extremaLinesT = []
+        self.extremaLinesR = []
+
+        self.tdAnalysisData = None
+        self.tdAnalysisMrk = []
+        self.tdAnalysisMtxt = []
         self.crossCorrData = None
 
         self.maxLag = tk.IntVar(value=5)
@@ -357,6 +374,18 @@ class App(tk.Tk):
             chk = ttk.Checkbutton(self.cbox, text=n.upper(), variable=v, command=self._updAll)
             chk.pack(side=tk.LEFT, padx=2)
         ttk.Checkbutton(self.cbox, text="Enable markers", variable=self.markersEnabled).pack(side=tk.LEFT, padx=(20,2))
+        self.extremaBox = ttk.Frame(lfrm)
+        ttk.Checkbutton(self.extremaBox, text="Show extrema", variable=self.extremaEnabled, command=self._updAll).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(self.extremaBox, text="Min", variable=self.extremaMinima, command=self._updAll).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(self.extremaBox, text="Max", variable=self.extremaMaxima, command=self._updAll).pack(side=tk.LEFT, padx=2)
+        ttk.Label(self.extremaBox, text="Range [GHz]:").pack(side=tk.LEFT, padx=(10,2))
+        rangeMinEntry = ttk.Entry(self.extremaBox, textvariable=self.extremaRangeMin, width=5)
+        rangeMinEntry.pack(side=tk.LEFT, padx=2)
+        self._validateNumeric(rangeMinEntry, self.extremaRangeMin, self._updAll)
+        ttk.Label(self.extremaBox, text="-").pack(side=tk.LEFT, padx=2)
+        rangeMaxEntry = ttk.Entry(self.extremaBox, textvariable=self.extremaRangeMax, width=5)
+        rangeMaxEntry.pack(side=tk.LEFT, padx=2)
+        self._validateNumeric(rangeMaxEntry, self.extremaRangeMax, self._updAll)
         self.rbox = ttk.Frame(lfrm)
         ttk.Label(self.rbox, text="Wybierz TDG:").pack(side=tk.LEFT)
         for n in ("s11", "s12", "s21", "s22"):
@@ -718,6 +747,31 @@ class App(tk.Tk):
 
         self.integData = None
 
+
+        self.tdAnalysisBox = ttk.Frame(lfrm)
+        ttk.Label(self.tdAnalysisBox, text="Time Domain Analysis", font=("", 10, "bold")).pack(anchor="w", pady=(5,0))
+        
+        ttk.Label(self.tdAnalysisBox, text="This analysis compares the first global maximum", font=("", 9)).pack(anchor="w", pady=(2,0))
+        ttk.Label(self.tdAnalysisBox, text="of S11 and S21 in time domain.", font=("", 9)).pack(anchor="w")
+        ttk.Label(self.tdAnalysisBox, text="Checks if: t_max(S21) > 2 * t_max(S11)", font=("", 9)).pack(anchor="w", pady=(5,0))
+        
+        btnFrame = ttk.Frame(self.tdAnalysisBox)
+        btnFrame.pack(anchor="w", pady=(10,0))
+        ttk.Button(btnFrame, text="Export Analysis", command=self._exportTDAnalysis).pack(side=tk.LEFT, padx=(0,5))
+        ttk.Button(btnFrame, text="Clear Markers", command=self._clearTDAnalysisMarkers).pack(side=tk.LEFT)
+        
+        optFrame = ttk.Frame(self.tdAnalysisBox)
+        optFrame.pack(anchor="w", pady=(5,0))
+        self.tdAnalysisTimeLimit = ValidatedDoubleVar(value=50.0)
+        ttk.Label(optFrame, text="Time limit [ns]:").pack(side=tk.LEFT)
+        timeLimitEntry = ttk.Entry(optFrame, textvariable=self.tdAnalysisTimeLimit, width=8)
+        timeLimitEntry.pack(side=tk.LEFT, padx=(5,0))
+        self._validateNumeric(timeLimitEntry, self.tdAnalysisTimeLimit, self._updTDAnalysisPlot)
+        
+        self.tdAnalysisMarkPeaks = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.tdAnalysisBox, text="Mark peaks on plot", variable=self.tdAnalysisMarkPeaks, 
+                       command=self._updTDAnalysisPlot).pack(anchor="w", pady=(5,0))
+
         nb = ttk.Notebook(self)
         nb.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         self.nb = nb
@@ -919,6 +973,17 @@ class App(tk.Tk):
         self.cvV.mpl_connect('pick_event', self._onPickVar)
         self.cvV.mpl_connect('motion_notify_event', self._onMotionVar)
 
+        frmTDA = ttk.Frame(nb)
+        nb.add(frmTDA, text="TD Analysis")
+        self.figTDA, (self.axTDA1, self.axTDA2) = plt.subplots(2, 1, figsize=(10,8), sharex=True)
+        self.cvTDA = FigureCanvasTkAgg(self.figTDA, master=frmTDA)
+        self.cvTDA.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.tbTDA = NavigationToolbar2Tk(self.cvTDA, frmTDA)
+        self.tbTDA.update()
+        self.tbTDA.pack(fill=tk.X)
+        
+        self.cvTDA.mpl_connect('button_press_event', self._onClickTDAnalysis)
+
     def _updateColorInfo(self):
         if self.regexSmallDiffChk.get():
             threshold = self.regexSmallDiffThreshold.get()
@@ -1073,7 +1138,7 @@ class App(tk.Tk):
             'ntwk_full': avg_network,
             'is_average': True,
             'source_files': [self.fls[i][1] for i in indices],
-            'line_color': '#0080ff',
+            'line_color': None,
             'line_width': 2.0,
             'custom_name': name
         }
@@ -1121,7 +1186,7 @@ class App(tk.Tk):
             'ntwk_full': avg_network,
             'is_average': True,
             'source_files': files,
-            'line_color': '#0080ff',
+            'line_color': None,
             'line_width': 2.0,
             'custom_name': name
         }
@@ -1398,6 +1463,68 @@ class App(tk.Tk):
                     span = ax.axvspan(f1, f2, color='blue', alpha=0.5)
                     self.regexSpans.append(span)
 
+        for line in self.extremaLinesR:
+            try:
+                line.remove()
+            except:
+                pass
+        self.extremaLinesR.clear()
+
+        all_extrema = []
+
+        if self.extremaEnabled.get() and files_data:
+            range_min = self.extremaRangeMin.get() * 1e9
+            range_max = self.extremaRangeMax.get() * 1e9
+            
+            for fname, value, freq, s_data, file_dict in files_data:
+                mask = (freq >= range_min) & (freq <= range_max)
+                if np.any(mask):
+                    freq_masked = freq[mask]
+                    s_data_masked = s_data[mask]
+                    
+                    if self.extremaMaxima.get():
+                        max_idx = np.argmax(s_data_masked)
+                        max_freq = freq_masked[max_idx]
+                        max_val = s_data_masked[max_idx]
+                        line = ax.axvline(x=max_freq, color='red', linestyle='--', alpha=0.3, linewidth=0.8)
+                        self.extremaLinesR.append(line)
+                        all_extrema.append({
+                            'type': 'max',
+                            'freq': max_freq,
+                            'value': max_val,
+                            'param': param,
+                            'file': fname
+                        })
+                    
+                    if self.extremaMinima.get():
+                        min_idx = np.argmin(s_data_masked)
+                        min_freq = freq_masked[min_idx]
+                        min_val = s_data_masked[min_idx]
+                        line = ax.axvline(x=min_freq, color='blue', linestyle='--', alpha=0.3, linewidth=0.8)
+                        self.extremaLinesR.append(line)
+                        all_extrema.append({
+                            'type': 'min',
+                            'freq': min_freq,
+                            'value': min_val,
+                            'param': param,
+                            'file': fname
+                        })
+            
+            if all_extrema:
+                self.txt.config(state=tk.NORMAL)
+                self.txt.insert(tk.END, "\n" + "="*40 + "\n")
+                self.txt.insert(tk.END, f"EXTREMA (Range: {self.extremaRangeMin.get():.2f}-{self.extremaRangeMax.get():.2f} GHz)\n")
+                self.txt.insert(tk.END, "-"*40 + "\n")
+                
+                all_extrema.sort(key=lambda x: (x['type'], x['freq']))
+                
+                for ext in all_extrema:
+                    type_str = "MAX" if ext['type'] == 'max' else "MIN"
+                    freq_ghz = ext['freq'] / 1e9
+                    self.txt.insert(tk.END, f"{type_str} | {ext['file']} | {ext['param'].upper()} | {freq_ghz:.4f} GHz | {ext['value']:.2f} dB\n")
+                
+                self.txt.config(state=tk.DISABLED)
+
         ax.set_xlabel("Frequency [Hz]")
         if self.regexPhaseChk.get():
             ax.set_ylabel(f"Phase {param.upper()} [°]")
@@ -1436,6 +1563,7 @@ class App(tk.Tk):
             self.trainBox.pack_forget()
             self.cbox.pack(anchor="w", pady=(2,0))
             self.txt.config(state=tk.NORMAL)
+            self.extremaBox.pack(anchor="w", pady=(2,0))
             self.txt.delete(1.0, tk.END)
             for txt in self.mtxt:
                 self.txt.insert(tk.END, txt)
@@ -1450,6 +1578,7 @@ class App(tk.Tk):
             self.varBox.pack_forget()
             self.integBox.pack_forget()
             self.trainBox.pack_forget()
+            self.extremaBox.pack(anchor="w", pady=(2,0))
             self.rbox.pack(anchor="w", pady=(2,0))
             self.gateBox.pack(anchor="w", pady=(8,0))
             self.txt.config(state=tk.NORMAL)
@@ -1466,6 +1595,7 @@ class App(tk.Tk):
             self.tab = "regex"
             self.cbox.pack_forget()
             self.rbox.pack_forget()
+            self.extremaBox.pack(anchor="w", pady=(2,0))
             self.gateBox.pack_forget()
             self.overlapBox.pack_forget()
             self.varBox.pack_forget()
@@ -1562,6 +1692,20 @@ class App(tk.Tk):
             self.shapeBox.pack_forget()
             self.integBox.pack(anchor="w", pady=(2,0))
             self._updIntegPlot()
+        elif tabTxt == "TD Analysis":
+            self.tab = "td_analysis"
+            self.cbox.pack_forget()
+            self.rbox.pack_forget()
+            self.gateBox.pack_forget()
+            self.regexBox.pack_forget()
+            self.overlapBox.pack_forget()
+            self.varBox.pack_forget()
+            self.trainBox.pack_forget()
+            self.shapeBox.pack_forget()
+            self.integBox.pack_forget()
+            self.extremaBox.pack_forget()
+            self.tdAnalysisBox.pack(anchor="w", pady=(2,0))
+            self._updTDAnalysisPlot()
 
 
     def _addFiles(self):
@@ -1664,6 +1808,127 @@ class App(tk.Tk):
                 if labels:
                     ncol = min(5, (len(labels) - 1) // 10 + 1)
                     ax.legend(handles, labels, loc='best', ncol=ncol, fontsize=8, framealpha=0.9)
+
+        for line in self.extremaLines:
+            try:
+                line.remove()
+            except:
+                pass
+        self.extremaLines.clear()
+
+        all_extrema = []
+
+        if self.extremaEnabled.get():
+            range_min = self.extremaRangeMin.get() * 1e9
+            range_max = self.extremaRangeMax.get() * 1e9
+            
+            for ax, prm in zip(axes, sel):
+                for v, p, d in self.fls:
+                    if not v.get(): continue
+                    ext = Path(p).suffix.lower()
+                    if d.get('is_average', False) and d.get('custom_name'):
+                        lbl = d['custom_name']
+                    else:
+                        lbl = Path(p).stem
+                    try:
+                        if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
+                            ntw_full = d.get('ntwk_full')
+                            if ntw_full is None:
+                                ntw_full = loadFile(p)
+                                d['ntwk_full'] = ntw_full
+                            
+                            ntw = ntw_full[sstr]
+                            arr = getattr(ntw, prm).s_db.flatten()
+                            fr = ntw.f
+                            
+                            mask = (fr >= range_min) & (fr <= range_max)
+                            if np.any(mask):
+                                fr_masked = fr[mask]
+                                arr_masked = arr[mask]
+                                
+                                if self.extremaMaxima.get():
+                                    max_idx = np.argmax(arr_masked)
+                                    max_freq = fr_masked[max_idx]
+                                    max_val = arr_masked[max_idx]
+                                    line = ax.axvline(x=max_freq, color='red', linestyle='--', alpha=0.3, linewidth=0.8)
+                                    self.extremaLines.append(line)
+                                    all_extrema.append({
+                                        'type': 'max',
+                                        'freq': max_freq,
+                                        'value': max_val,
+                                        'param': prm,
+                                        'file': lbl
+                                    })
+                                
+                                if self.extremaMinima.get():
+                                    min_idx = np.argmin(arr_masked)
+                                    min_freq = fr_masked[min_idx]
+                                    min_val = arr_masked[min_idx]
+                                    line = ax.axvline(x=min_freq, color='blue', linestyle='--', alpha=0.3, linewidth=0.8)
+                                    self.extremaLines.append(line)
+                                    all_extrema.append({
+                                        'type': 'min',
+                                        'freq': min_freq,
+                                        'value': min_val,
+                                        'param': prm,
+                                        'file': lbl
+                                    })
+                        
+                        elif ext == '.csv' and prm == 's11':
+                            if 'csv_data' not in d:
+                                df = pd.read_csv(p)
+                                d['csv_data'] = (df.iloc[:,0].values, df.iloc[:,1].values)
+                            fr, arr = d['csv_data']
+                            
+                            mask = (fr >= range_min) & (fr <= range_max)
+                            if np.any(mask):
+                                fr_masked = fr[mask]
+                                arr_masked = arr[mask]
+                                
+                                if self.extremaMaxima.get():
+                                    max_idx = np.argmax(arr_masked)
+                                    max_freq = fr_masked[max_idx]
+                                    max_val = arr_masked[max_idx]
+                                    line = ax.axvline(x=max_freq, color='red', linestyle='--', alpha=0.3, linewidth=0.8)
+                                    self.extremaLines.append(line)
+                                    all_extrema.append({
+                                        'type': 'max',
+                                        'freq': max_freq,
+                                        'value': max_val,
+                                        'param': prm,
+                                        'file': lbl
+                                    })
+                                
+                                if self.extremaMinima.get():
+                                    min_idx = np.argmin(arr_masked)
+                                    min_freq = fr_masked[min_idx]
+                                    min_val = arr_masked[min_idx]
+                                    line = ax.axvline(x=min_freq, color='blue', linestyle='--', alpha=0.3, linewidth=0.8)
+                                    self.extremaLines.append(line)
+                                    all_extrema.append({
+                                        'type': 'min',
+                                        'freq': min_freq,
+                                        'value': min_val,
+                                        'param': prm,
+                                        'file': lbl
+                                    })
+                    except Exception:
+                        pass
+            
+            if all_extrema:
+                self.txt.config(state=tk.NORMAL)
+                self.txt.insert(tk.END, "\n" + "="*40 + "\n")
+                self.txt.insert(tk.END, f"EXTREMA (Range: {self.extremaRangeMin.get():.2f}-{self.extremaRangeMax.get():.2f} GHz)\n")
+                self.txt.insert(tk.END, "-"*40 + "\n")
+                
+                all_extrema.sort(key=lambda x: (x['param'], x['type'], x['freq']))
+                
+                for ext in all_extrema:
+                    type_str = "MAX" if ext['type'] == 'max' else "MIN"
+                    freq_ghz = ext['freq'] / 1e9
+                    self.txt.insert(tk.END, f"{type_str} | {ext['file']} | {ext['param'].upper()} | {freq_ghz:.4f} GHz | {ext['value']:.2f} dB\n")
+                
+                self.txt.config(state=tk.DISABLED)
 
         axes[-1].set_xlabel("Frequency [Hz]")
         self.fig.tight_layout(rect=[0, 0, 1, 1])
@@ -1867,12 +2132,143 @@ class App(tk.Tk):
         if axTG.get_legend():
             axTG.get_legend().remove()
         if self.legendOnPlot.get() and legTG: 
-            ncol = min(5, (len(lenTG) - 1) // 10 + 1)
+            ncol = min(5, (len(legTG) - 1) // 10 + 1)
             axTG.legend(legTG, loc='best', ncol=ncol, fontsize=8, framealpha=0.9)
         if not legTG:
             axTG.text(0.5, 0.5, "Brak danych / Placeholder", ha="center", va="center", color="gray", transform=axTG.transAxes)
             axTG.set_xticks([]); axTG.set_yticks([])
         
+
+        for line in self.extremaLinesT:
+            try:
+                line.remove()
+            except:
+                pass
+        self.extremaLinesT.clear()
+
+        all_extrema = []
+
+        if self.extremaEnabled.get():
+            range_min = self.extremaRangeMin.get() * 1e9
+            range_max = self.extremaRangeMax.get() * 1e9
+            
+            for ax, ax_label in [(axF, 'raw'), (axTG, 'gated')]:
+                if ax_label == 'gated' and not doGate:
+                    continue
+                    
+                for v, p, d in self.fls:
+                    if not v.get(): continue
+                    ext = Path(p).suffix.lower()
+                    if d.get('is_average', False) and d.get('custom_name'):
+                        lbl = d['custom_name']
+                    else:
+                        lbl = Path(p).stem
+                    try:
+                        if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
+                            ntw_full = d.get('ntwk_full')
+                            if ntw_full is None:
+                                ntw_full = loadFile(p)
+                                d['ntwk_full'] = ntw_full
+                            
+                            ntw = ntw_full[sstr]
+                            
+                            if ax_label == 'raw':
+                                arr = getattr(ntw, prm).s_db.flatten()
+                                fr = ntw.f
+                            else:
+                                sRaw = getattr(ntw, prm)
+                                sGate = sRaw.time_gate(center=center, span=span)
+                                arr = sGate.s_db.flatten()
+                                fr = ntw.f
+                            
+                            mask = (fr >= range_min) & (fr <= range_max)
+                            if np.any(mask):
+                                fr_masked = fr[mask]
+                                arr_masked = arr[mask]
+                                
+                                if self.extremaMaxima.get():
+                                    max_idx = np.argmax(arr_masked)
+                                    max_freq = fr_masked[max_idx]
+                                    max_val = arr_masked[max_idx]
+                                    line = ax.axvline(x=max_freq, color='red', linestyle='--', alpha=0.3, linewidth=0.8)
+                                    self.extremaLinesT.append(line)
+                                    all_extrema.append({
+                                        'type': 'max',
+                                        'freq': max_freq,
+                                        'value': max_val,
+                                        'param': f'{prm}_{ax_label}',
+                                        'file': lbl
+                                    })
+                                
+                                if self.extremaMinima.get():
+                                    min_idx = np.argmin(arr_masked)
+                                    min_freq = fr_masked[min_idx]
+                                    min_val = arr_masked[min_idx]
+                                    line = ax.axvline(x=min_freq, color='blue', linestyle='--', alpha=0.3, linewidth=0.8)
+                                    self.extremaLinesT.append(line)
+                                    all_extrema.append({
+                                        'type': 'min',
+                                        'freq': min_freq,
+                                        'value': min_val,
+                                        'param': f'{prm}_{ax_label}',
+                                        'file': lbl
+                                    })
+                        
+                        elif ext == '.csv' and prm == 's11' and ax_label == 'raw':
+                            if 'csv_data' not in d:
+                                df = pd.read_csv(p)
+                                d['csv_data'] = (df.iloc[:,0].values, df.iloc[:,1].values)
+                            fr, arr = d['csv_data']
+                            
+                            mask = (fr >= range_min) & (fr <= range_max)
+                            if np.any(mask):
+                                fr_masked = fr[mask]
+                                arr_masked = arr[mask]
+                                
+                                if self.extremaMaxima.get():
+                                    max_idx = np.argmax(arr_masked)
+                                    max_freq = fr_masked[max_idx]
+                                    max_val = arr_masked[max_idx]
+                                    line = ax.axvline(x=max_freq, color='red', linestyle='--', alpha=0.3, linewidth=0.8)
+                                    self.extremaLinesT.append(line)
+                                    all_extrema.append({
+                                        'type': 'max',
+                                        'freq': max_freq,
+                                        'value': max_val,
+                                        'param': f'{prm}_{ax_label}',
+                                        'file': lbl
+                                    })
+                                
+                                if self.extremaMinima.get():
+                                    min_idx = np.argmin(arr_masked)
+                                    min_freq = fr_masked[min_idx]
+                                    min_val = arr_masked[min_idx]
+                                    line = ax.axvline(x=min_freq, color='blue', linestyle='--', alpha=0.3, linewidth=0.8)
+                                    self.extremaLinesT.append(line)
+                                    all_extrema.append({
+                                        'type': 'min',
+                                        'freq': min_freq,
+                                        'value': min_val,
+                                        'param': f'{prm}_{ax_label}',
+                                        'file': lbl
+                                    })
+                    except Exception:
+                        pass
+            
+            if all_extrema:
+                self.txt.config(state=tk.NORMAL)
+                self.txt.insert(tk.END, "\n" + "="*40 + "\n")
+                self.txt.insert(tk.END, f"EXTREMA (Range: {self.extremaRangeMin.get():.2f}-{self.extremaRangeMax.get():.2f} GHz)\n")
+                self.txt.insert(tk.END, "-"*40 + "\n")
+                
+                all_extrema.sort(key=lambda x: (x['param'], x['type'], x['freq']))
+                
+                for ext in all_extrema:
+                    type_str = "MAX" if ext['type'] == 'max' else "MIN"
+                    freq_ghz = ext['freq'] / 1e9
+                    self.txt.insert(tk.END, f"{type_str} | {ext['file']} | {ext['param'].upper()} | {freq_ghz:.4f} GHz | {ext['value']:.2f} dB\n")
+                
+                self.txt.config(state=tk.DISABLED)
         self.figT.tight_layout()
         self.cvT.draw()
         
@@ -2244,6 +2640,312 @@ class App(tk.Tk):
         
         self.figO.tight_layout()
         self.cvO.draw()
+
+    def _updTDAnalysisPlot(self):
+        self.axTDA1.clear()
+        self.axTDA2.clear()
+        
+        fmin = self.fmin.get()
+        fmax = self.fmax.get()
+        sstr = f"{fmin}-{fmax}ghz"
+        time_limit = self.tdAnalysisTimeLimit.get()
+        
+        analysis_results = []
+        
+        for v, p, d in self.fls:
+            if not v.get():
+                continue
+                
+            ext = Path(p).suffix.lower()
+            if d.get('is_average', False) and d.get('custom_name'):
+                lbl = d['custom_name']
+            else:
+                lbl = Path(p).stem if not p.startswith("<") else p[1:-1]
+                
+            if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
+                try:
+                    ntw_full = d.get('ntwk_full')
+                    cached_range = d.get('cached_range')
+                    
+                    if ntw_full is None:
+                        ntw_full = loadFile(p)
+                        d['ntwk_full'] = ntw_full
+                    
+                    if cached_range != sstr:
+                        ntw = ntw_full[sstr]
+                        d['ntwk'] = ntw
+                        d['cached_range'] = sstr
+                    else:
+                        ntw = d['ntwk']
+                    
+                    s11_td = ntw.s11
+                    t_ns = s11_td.frequency.t_ns
+                    s11_time_db = s11_td.s_time_db.flatten()
+                    
+                    if ntw.nports >= 2:
+                        s21_td = ntw.s21
+                        s21_time_db = s21_td.s_time_db.flatten()
+                    else:
+                        s21_time_db = None
+                    
+                    time_mask = (t_ns >= 0) & (t_ns <= time_limit)
+                    t_ns_limited = t_ns[time_mask]
+                    s11_limited = s11_time_db[time_mask]
+                    
+                    line_kwargs = {'label': lbl}
+                    if d.get('line_color'):
+                        line_kwargs['color'] = d['line_color']
+                    if d.get('line_width', 1.0) != 1.0:
+                        line_kwargs['linewidth'] = d['line_width']
+                    
+                    self.axTDA1.plot(t_ns_limited, s11_limited, **line_kwargs)
+                    
+                    s11_max_idx = np.argmax(s11_limited)
+                    s11_max_time = t_ns_limited[s11_max_idx]
+                    s11_max_val = s11_limited[s11_max_idx]
+                    
+                    if s21_time_db is not None:
+                        s21_limited = s21_time_db[time_mask]
+                        self.axTDA2.plot(t_ns_limited, s21_limited, **line_kwargs)
+                        
+                        s21_max_idx = np.argmax(s21_limited)
+                        s21_max_time = t_ns_limited[s21_max_idx]
+                        s21_max_val = s21_limited[s21_max_idx]
+                        
+                        condition_met = abs(s11_max_time - 2*s21_max_time) <= 0.5
+                        
+                        analysis_results.append({
+                            'file': lbl,
+                            's11_max_time': s11_max_time,
+                            's11_max_val': s11_max_val,
+                            's21_max_time': s21_max_time,
+                            's21_max_val': s21_max_val,
+                            'condition_met': condition_met
+                        })
+                        
+                        if self.tdAnalysisMarkPeaks.get():
+                            color = 'green' if condition_met else 'red'
+                            self.axTDA1.plot(s11_max_time, s11_max_val, 'o', color=color, 
+                                           markersize=8, markeredgecolor='black', markeredgewidth=1)
+                            self.axTDA2.plot(s21_max_time, s21_max_val, 'o', color=color,
+                                           markersize=8, markeredgecolor='black', markeredgewidth=1)
+                    else:
+                        analysis_results.append({
+                            'file': lbl,
+                            's11_max_time': s11_max_time,
+                            's11_max_val': s11_max_val,
+                            's21_max_time': None,
+                            's21_max_val': None,
+                            'condition_met': None
+                        })
+                        
+                        if self.tdAnalysisMarkPeaks.get():
+                            self.axTDA1.plot(s11_max_time, s11_max_val, 'o', color='gray',
+                                           markersize=8, markeredgecolor='black', markeredgewidth=1)
+                    
+                except Exception as e:
+                    pass
+        
+        self.tdAnalysisData = analysis_results
+        
+        self.axTDA1.set_ylabel('S11 [dB]')
+        self.axTDA1.set_title('S11 Time Domain')
+        self.axTDA1.grid(True, alpha=0.3)
+        self.axTDA1.set_xlim(0, time_limit)
+        
+        self.axTDA2.set_ylabel('S21 [dB]')
+        self.axTDA2.set_xlabel('Time [ns]')
+        self.axTDA2.set_title('S21 Time Domain')
+        self.axTDA2.grid(True, alpha=0.3)
+        self.axTDA2.set_xlim(0, time_limit)
+        
+        if self.legendOnPlot.get():
+            handles1, labels1 = self.axTDA1.get_legend_handles_labels()
+            if labels1:
+                ncol = min(5, (len(labels1) - 1) // 10 + 1)
+                self.axTDA1.legend(loc='best', ncol=ncol, fontsize=8, framealpha=0.9)
+            
+            handles2, labels2 = self.axTDA2.get_legend_handles_labels()
+            if labels2:
+                ncol = min(5, (len(labels2) - 1) // 10 + 1)
+                self.axTDA2.legend(loc='best', ncol=ncol, fontsize=8, framealpha=0.9)
+        
+        self.figTDA.tight_layout()
+        self.cvTDA.draw()
+        
+        self.txt.config(state=tk.NORMAL)
+        self.txt.delete(1.0, tk.END)
+        self.txt.insert(tk.END, "Time Domain Analysis\n")
+        self.txt.insert(tk.END, "="*40 + "\n")
+        self.txt.insert(tk.END, f"Condition: t_max(S11) == 2 * t_max(S21) (+/- 0.5ns)\n")
+        self.txt.insert(tk.END, f"Time window: 0 - {time_limit} ns\n")
+        self.txt.insert(tk.END, "-"*40 + "\n\n")
+        
+        for res in analysis_results:
+            self.txt.insert(tk.END, f"{res['file']}:\n")
+            self.txt.insert(tk.END, f"  S11 max: {res['s11_max_time']:.3f} ns @ {res['s11_max_val']:.2f} dB\n")
+            
+            if res['s21_max_time'] is not None:
+                self.txt.insert(tk.END, f"  S21 max: {res['s21_max_time']:.3f} ns @ {res['s21_max_val']:.2f} dB\n")
+                self.txt.insert(tk.END, f"  2 * t_max(S11) = {2*res['s11_max_time']:.3f} ns\n")
+                
+                if res['condition_met']:
+                    self.txt.insert(tk.END, f"  Condition: PASS (GREEN)\n")
+                else:
+                    self.txt.insert(tk.END, f"  Condition: FAIL (RED)\n")
+            else:
+                self.txt.insert(tk.END, f"  S21: Not available (1-port device)\n")
+            
+            self.txt.insert(tk.END, "\n")
+        
+        for txt in self.tdAnalysisMtxt:
+            self.txt.insert(tk.END, txt)
+        
+        self.txt.config(state=tk.DISABLED)
+
+
+    def _onClickTDAnalysis(self, event):
+        if getattr(self, "_blkNextTDA", False):
+            self._blkNextTDA = False
+            return
+        
+        if event.inaxes not in [self.axTDA1, self.axTDA2] or self.tdAnalysisData is None:
+            return
+        
+        x = event.xdata
+        y = event.ydata
+        if x is None or y is None:
+            return
+        
+        # Find closest point
+        ax = event.inaxes
+        mind = float("inf")
+        best = None
+        
+        for ln in ax.get_lines():
+            if ln.get_label().startswith('_'):
+                continue
+            xd = ln.get_xdata()
+            yd = ln.get_ydata()
+            dists = np.sqrt((xd - x)**2 + (yd - y)**2)
+            idx = np.argmin(dists)
+            if dists[idx] < mind:
+                mind = dists[idx]
+                xf = xd[idx]
+                yf = yd[idx]
+                lbl = ln.get_label()
+                col = ln.get_color()
+                best = (xf, yf, lbl, col)
+        
+        if best:
+            xf, yf, lbl, col = best
+            m, = ax.plot([xf], [yf], 'o', color=col, markersize=10, picker=7)
+            
+            param = "S11" if ax == self.axTDA1 else "S21"
+            t = ax.annotate(
+                f"{xf:.3f} ns\n{yf:.2f} dB",
+                xy=(xf, yf), xytext=(10, 20),
+                textcoords="offset points",
+                bbox=dict(boxstyle="round,pad=0.2", fc="yellow", alpha=0.5),
+                arrowprops=dict(arrowstyle="->", color=col, lw=1.5),
+                fontsize=9
+            )
+            t.set_picker(True)
+            
+            self.tdAnalysisMrk.append({'marker': m, 'text': t, 'ax': ax})
+            
+            txt = f"{lbl} {param}: {xf:.3f} ns @ {yf:.2f} dB\n"
+            self.tdAnalysisMtxt.append(txt)
+            self.txt.config(state=tk.NORMAL)
+            self.txt.insert(tk.END, txt)
+            self.txt.config(state=tk.DISABLED)
+            
+            self.cvTDA.draw()
+
+
+
+    def _clearTDAnalysisMarkers(self):
+        for m in self.tdAnalysisMrk:
+            try:
+                m['marker'].remove()
+                m['text'].remove()
+            except:
+                pass
+        self.tdAnalysisMrk.clear()
+        self.tdAnalysisMtxt.clear()
+        
+        # Refresh text
+        if self.tdAnalysisData:
+            self._updTDAnalysisPlot()
+        else:
+            self.txt.config(state=tk.NORMAL)
+            self.txt.delete(1.0, tk.END)
+            self.txt.config(state=tk.DISABLED)
+        
+        self.cvTDA.draw()
+
+
+    def _exportTDAnalysis(self):
+        if not self.tdAnalysisData:
+            messagebox.showinfo("No data", "No analysis data to export")
+            return
+        
+        filename = filedialog.asksaveasfilename(
+            title="Save TD Analysis",
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        
+        if not filename:
+            return
+        
+        if filename.endswith('.csv'):
+            import csv
+            with open(filename, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['File', 'S11_max_time_ns', 'S11_max_val_dB', 
+                               'S21_max_time_ns', 'S21_max_val_dB', 'Condition_met'])
+                for res in self.tdAnalysisData:
+                    writer.writerow([
+                        res['file'],
+                        res['s11_max_time'],
+                        res['s11_max_val'],
+                        res['s21_max_time'] if res['s21_max_time'] is not None else 'N/A',
+                        res['s21_max_val'] if res['s21_max_val'] is not None else 'N/A',
+                        'PASS' if res['condition_met'] else 'FAIL' if res['condition_met'] is not None else 'N/A'
+                    ])
+        else:
+            with open(filename, 'w') as f:
+                f.write("Time Domain Analysis Results\n")
+                f.write("="*60 + "\n")
+                f.write(f"Condition: t_max(S21) > 2 * t_max(S11)\n")
+                f.write(f"Time window: 0 - {self.tdAnalysisTimeLimit.get()} ns\n")
+                f.write(f"Frequency range: {self.fmin.get()}-{self.fmax.get()} GHz\n")
+                f.write("-"*60 + "\n\n")
+                
+                for res in self.tdAnalysisData:
+                    f.write(f"File: {res['file']}\n")
+                    f.write(f"  S11 max: {res['s11_max_time']:.3f} ns @ {res['s11_max_val']:.2f} dB\n")
+                    
+                    if res['s21_max_time'] is not None:
+                        f.write(f"  S21 max: {res['s21_max_time']:.3f} ns @ {res['s21_max_val']:.2f} dB\n")
+                        f.write(f"  2 * t_max(S11) = {2*res['s11_max_time']:.3f} ns\n")
+                        f.write(f"  Condition: {'PASS' if res['condition_met'] else 'FAIL'}\n")
+                    else:
+                        f.write(f"  S21: Not available\n")
+                    f.write("\n")
+                
+                # Add summary
+                valid_results = [r for r in self.tdAnalysisData if r['condition_met'] is not None]
+                if valid_results:
+                    passed = sum(1 for r in valid_results if r['condition_met'])
+                    total = len(valid_results)
+                    f.write("-"*60 + "\n")
+                    f.write(f"Summary: {passed}/{total} files pass condition\n")
+                    f.write(f"Pass rate: {100*passed/total:.1f}%\n")
+        
+        messagebox.showinfo("Export complete", f"Analysis saved to {filename}")
+
 
     def _exportOverlaps(self):
         if not self.overlapData:
