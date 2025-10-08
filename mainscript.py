@@ -1541,7 +1541,7 @@ class App(tk.Tk):
     def _avgFiles(self):
         dialog = tk.Toplevel(self)
         dialog.title("Average S-parameter files")
-        dialog.geometry("400x500")
+        dialog.geometry("400x580")  # Taller for 3 options
         dialog.transient(self)
         dialog.grab_set()
         
@@ -1550,6 +1550,8 @@ class App(tk.Tk):
         mode = tk.StringVar(value="loaded")
         ttk.Radiobutton(dialog, text="Average loaded files", variable=mode, value="loaded").pack(anchor="w", padx=20)
         ttk.Radiobutton(dialog, text="Load and average new files", variable=mode, value="new").pack(anchor="w", padx=20)
+        ttk.Radiobutton(dialog, text="Load folder structure (each subfolder → one average)", 
+                       variable=mode, value="folder").pack(anchor="w", padx=20)
         
         ttk.Separator(dialog, orient="horizontal").pack(fill="x", pady=10)
         
@@ -1585,9 +1587,12 @@ class App(tk.Tk):
                 indices = [file_indices[s] for s in selected]
                 self._performAverage(indices, nameVar.get())
                 dialog.destroy()
-            else:
+            elif mode.get() == "new":
                 dialog.destroy()
                 self._loadAndAverage(nameVar.get())
+            else:
+                dialog.destroy()
+                self._loadAndAverageFolderStructure()
         
         buttonFrame = ttk.Frame(dialog)
         buttonFrame.pack(pady=10)
@@ -1598,6 +1603,93 @@ class App(tk.Tk):
         x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
         y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
         dialog.geometry(f"+{x}+{y}")
+
+    def _loadAndAverageFolderStructure(self):
+        parent_dir = filedialog.askdirectory(
+            title="Select parent folder (each subfolder will become one average)"
+        )
+        
+        if not parent_dir:
+            return
+        
+        try:
+            subdirs = [d for d in os.listdir(parent_dir) 
+                      if os.path.isdir(os.path.join(parent_dir, d))]
+            
+            if not subdirs:
+                messagebox.showwarning("No subfolders", 
+                                     f"No subfolders found in:\n{parent_dir}")
+                return
+            
+            created_count = 0
+            skipped = []
+            
+            for subdir_name in sorted(subdirs):
+                subdir_path = os.path.join(parent_dir, subdir_name)
+                
+                s_files = []
+                for root, dirs, files in os.walk(subdir_path):
+                    for file in files:
+                        if file.lower().endswith(('.s1p', '.s2p', '.s3p')):
+                            s_files.append(os.path.join(root, file))
+                
+                if len(s_files) < 2:
+                    skipped.append(f"{subdir_name} ({len(s_files)} file(s))")
+                    continue
+                
+                networks = []
+                for filepath in s_files:
+                    try:
+                        ntw = loadFile(filepath)
+                        networks.append(ntw)
+                    except:
+                        pass
+                
+                if len(networks) < 2:
+                    skipped.append(f"{subdir_name} (failed to load enough files)")
+                    continue
+                
+                avg_network = self._computeAverage(networks)
+                
+                if avg_network is None:
+                    skipped.append(f"{subdir_name} (averaging failed)")
+                    continue
+                
+                self.avgCounter += 1
+                avg_name = subdir_name
+                v = tk.BooleanVar(value=True)
+                chk = tk.Checkbutton(self.fbox, text=f"[AVG] {avg_name}", 
+                                   variable=v, command=self._updAll, 
+                                   fg="blue", activeforeground="blue")
+                chk.pack(anchor="w")
+                
+                avg_path = f"<average_{self.avgCounter}>"
+                d = {
+                    'ntwk_full': avg_network,
+                    'is_average': True,
+                    'source_files': s_files,
+                    'line_color': None,
+                    'line_width': 2.0,
+                    'custom_name': avg_name
+                }
+                
+                chk.bind("<Button-3>", lambda e, path=avg_path: self._showStyleMenu(e, path))
+                self.fls.append((v, avg_path, d))
+                created_count += 1
+            
+            self.fileListCanvas.configure(scrollregion=self.fileListCanvas.bbox("all"))
+            self._updAll()
+            
+            msg = f"Created {created_count} average(s) from {len(subdirs)} subfolder(s)"
+            if skipped:
+                msg += f"\n\nSkipped {len(skipped)} subfolder(s):\n" + "\n".join(f"  • {s}" for s in skipped[:10])
+                if len(skipped) > 10:
+                    msg += f"\n  ... and {len(skipped) - 10} more"
+            
+            messagebox.showinfo("Batch Averaging Complete", msg)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load folder structure:\n{str(e)}")
 
 
         
