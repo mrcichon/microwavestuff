@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 import os
+import io
 import threading
 import matplotlib
 matplotlib.use("TkAgg")
@@ -118,7 +119,15 @@ if rf.__version__ > "0.17.0":
 
 MAXF = 4
 MINF = 0.4
+RMS_SCALE = (-10.0, 10.0, 2.5)
+TP_SCALE = (-40.0, 20.0, 20.0)
 
+HV_COLOR = {
+    "xawery": "#e91e63",
+    "zuzia": "#2196f3",
+    "yeti": "#43a047",
+    "pustelnik": "#ffd400",
+}
 
 def loadFile(p):
     print(f"loadFile called with: {p}")
@@ -156,6 +165,492 @@ def loadFile(p):
     except Exception as e:
         raise
 
+
+def parse_megiq_txt(path):
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        raw = f.read()
+    raw = raw.lstrip("\ufeff")
+    text = raw.replace("\r\n", "\n").replace(",", ".")
+    lines = text.split("\n")
+    header_idx = None
+    for i, line in enumerate(lines):
+        if "dB.YZ.H" in line and "dB.ZX.H" in line and "dB.XY.H" in line:
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError("Header not found")
+    header_line = lines[header_idx]
+    hdr_tokens = [t for t in header_line.split("\t")]
+    colnames = ["angle_deg"] + [t for t in hdr_tokens[1:] if t]
+    data_block = "\n".join(lines[header_idx + 1:])
+    df = pd.read_csv(io.StringIO(data_block), sep=r"\s+|\t+", engine="python", names=colnames)
+    for c in df.columns:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df = df.dropna(subset=["angle_deg"]).reset_index(drop=True)
+    return {
+        "angle_deg": df["angle_deg"],
+        "YZ": {"HV": df.get("dB.YZ.HV")},
+        "ZX": {"HV": df.get("dB.ZX.HV")},
+        "XY": {"HV": df.get("dB.XY.HV")},
+    }
+
+def parse_pustelnik_txt(path):
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        raw = f.read()
+    raw = raw.lstrip("\ufeff")
+    text = raw.replace("\r\n", "\n").replace(",", ".")
+    lines = text.split("\n")
+    header_idx = None
+    hv_header_regex = re.compile(r"HV", re.I)
+    for i, line in enumerate(lines):
+        if hv_header_regex.search(line) and ("dB." in line or "dB" in line):
+            header_idx = i
+            break
+    if header_idx is not None:
+        header_line = lines[header_idx]
+        hdr_tokens = [t for t in header_line.split("\t")]
+        colnames = ["angle_deg"] + [t for t in hdr_tokens[1:] if t]
+        data_block = "\n".join(lines[header_idx + 1:])
+        df = pd.read_csv(io.StringIO(data_block), sep=r"\s+|\t+", engine="python", names=colnames)
+        hv_col = None
+        for c in df.columns:
+            if re.search(r"HV$", c, re.I):
+                hv_col = c
+                break
+        if hv_col is None and "HV" in df.columns:
+            hv_col = "HV"
+        if hv_col is None and len(df.columns) >= 2:
+            hv_col = df.columns[1]
+        df = df.dropna(subset=["angle_deg"]).reset_index(drop=True)
+        hv = pd.to_numeric(df[hv_col], errors="coerce")
+        return {"angle_deg": pd.to_numeric(df["angle_deg"], errors="coerce"), "HV": hv}
+    else:
+        start = 0
+        number_line = re.compile(r"^\s*-?\d+(\.\d+)?(\s+|-?\d|\.)+")
+        for i, ln in enumerate(lines):
+            if number_line.match(ln.strip()):
+                start = i
+                break
+        block = "\n".join(l for l in lines[start:] if l.strip())
+        df = pd.read_csv(io.StringIO(block), sep=r"\s+|\t+", engine="python", header=None)
+        if df.shape[1] < 2:
+            raise ValueError("Pustelnik file needs at least 2 columns")
+        df = df.iloc[:, :2]
+        df.columns = ["angle_deg", "HV"]
+        for c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        df = df.dropna(subset=["angle_deg", "HV"]).reset_index(drop=True)
+        return {"angle_deg": df["angle_deg"], "HV": df["HV"]}
+
+def parse_theta_phi_file(path):
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        raw = f.read()
+    raw = raw.lstrip("\ufeff").replace("\r\n", "\n").replace(",", ".")
+    lines = [ln for ln in raw.split("\n") if ln.strip() and not set(ln.strip()) <= set("- ")]
+    header_i = None
+    for i, ln in enumerate(lines):
+        if "Theta" in ln and "Phi" in ln:
+            header_i = i
+            break
+    data_lines = lines[header_i + 1:] if header_i is not None else lines
+    float_re = re.compile(r"[-+]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?")
+    rows = []
+    for ln in data_lines:
+        nums = [float(x) for x in float_re.findall(ln)]
+        if len(nums) >= 3:
+            rows.append((nums[0], nums[1], nums[2]))
+    if not rows:
+        raise ValueError("No numeric data found")
+    df = pd.DataFrame(rows, columns=["theta_deg", "phi_deg", "dir_dbi"])
+    return df
+
+def _nearest_mod180(phivals, p, tol=2.0):
+    p2 = (p + 180.0) % 360.0
+    diffs = np.minimum(np.abs(phivals - p2), 360.0 - np.abs(phivals - p2))
+    idx = np.where(diffs <= tol)[0]
+    return int(idx[0]) if idx.size else None
+
+def auto_extract_tp_series(df, tol=2.0):
+    phivals = np.array(sorted(np.round(df["phi_deg"].to_numpy(), 1)))
+    uniq = np.unique(phivals)
+    if uniq.size == 0:
+        raise ValueError("No phi values in file")
+    counts = [(phi, (phivals == phi).sum()) for phi in uniq]
+    counts.sort(key=lambda x: x[1], reverse=True)
+    phi_a = counts[0][0]
+    j = _nearest_mod180(uniq, phi_a, tol=tol)
+    if j is not None:
+        phi_b = float(uniq[j])
+        a = df[np.isclose(df["phi_deg"], phi_a, atol=tol)].sort_values("theta_deg")
+        b = df[np.isclose(df["phi_deg"], phi_b, atol=tol)].sort_values("theta_deg", ascending=False)
+        theta = np.concatenate([a["theta_deg"].to_numpy(), (360.0 - b["theta_deg"].to_numpy())])
+        db = np.concatenate([a["dir_dbi"].to_numpy(), b["dir_dbi"].to_numpy()])
+        if theta.size and abs(theta[-1] - 360.0) < 1e-6:
+            theta, db = theta[:-1], db[:-1]
+        used = f"φ≈{phi_a}° & {phi_b}°"
+        return theta, db, used
+    else:
+        a = df[np.isclose(df["phi_deg"], phi_a, atol=tol)].sort_values("theta_deg")
+        theta = a["theta_deg"].to_numpy()
+        db = a["dir_dbi"].to_numpy()
+        span = float(theta.max() - theta.min()) if theta.size else 0.0
+        if span < 300:
+            theta2 = 360.0 - theta[::-1]
+            db2 = db[::-1]
+            if theta2.size and abs(theta2[0] - 360.0) < 1e-6:
+                theta2, db2 = theta2[1:], db2[1:]
+            theta = np.concatenate([theta, theta2])
+            db = np.concatenate([db, db2])
+        used = f"φ≈{phi_a}°"
+        return theta, db, used
+
+def draw_polar(ax, series_list, title_text, min_db, max_db, grid_step):
+    ax.clear()
+    ax.set_facecolor("white")
+    ax.figure.set_facecolor("white")
+    if max_db <= min_db:
+        max_db = min_db + 1e-3
+    if grid_step <= 0:
+        grid_step = 2.5
+    offset = -min_db
+    to_r = lambda v: v + offset
+    for s in series_list:
+        theta = pd.Series(s["angle_deg"]).to_numpy() * np.pi / 180.0
+        vals = pd.Series(s["val"]).astype(float).to_numpy()
+        vals = np.clip(vals, min_db, max_db)
+        ax.plot(theta, to_r(vals), color=s["color"], lw=2.2, label=s.get("label", ""))
+    ax.set_theta_zero_location("N")
+    ax.set_theta_direction(-1)
+    ax.set_rlim(0, to_r(max_db))
+    ticks, t = [], min_db
+    while t <= max_db + 1e-9:
+        ticks.append(round(t, 2))
+        t += grid_step
+    ax.set_rticks([to_r(x) for x in ticks])
+    ax.set_yticklabels([f"{int(x)}" if abs(x - round(x)) < 1e-6 else f"{x:.1f}" for x in ticks], color="#444")
+    ax.set_xticklabels([f"{d}°" for d in range(0, 360, 45)], color="#444")
+    ax.grid(True, color="#cccccc", alpha=0.9)
+    ax.set_title(title_text, color="#111", pad=12, fontsize=12)
+
+
+class BoxZoom:
+    def __init__(self, ax, canvas):
+        self.ax = ax
+        self.canvas = canvas
+        self.start = None
+        self.rect = None
+        self.cid_press = canvas.mpl_connect('button_press_event', self.on_press)
+        self.cid_move = canvas.mpl_connect('motion_notify_event', self.on_move)
+        self.cid_rel = canvas.mpl_connect('button_release_event', self.on_release)
+
+    def on_press(self, event):
+        if event.inaxes != self.ax or event.button != 1 or not self._ctrl(event):
+            return
+        if event.xdata is None or event.ydata is None:
+            return
+        self.start = (event.xdata, event.ydata)
+        self.rect = mpatches.Rectangle((self.start[0], self.start[1]), 0, 0, fill=False, ec='#666', lw=1.2, ls='--')
+        self.ax.add_patch(self.rect)
+        self.canvas.draw_idle()
+
+    def on_move(self, event):
+        if self.start is None or self.rect is None or event.inaxes != self.ax:
+            return
+        if event.xdata is None or event.ydata is None:
+            return
+        x0, y0 = self.start
+        self.rect.set_width(event.xdata - x0)
+        self.rect.set_height(event.ydata - y0)
+        self.rect.set_xy((x0, y0))
+        self.canvas.draw_idle()
+
+    def on_release(self, event):
+        if self.start is None or self.rect is None or event.inaxes != self.ax:
+            self._cleanup()
+            return
+        if event.xdata is None or event.ydata is None:
+            self._cleanup()
+            return
+        x0, y0 = self.start
+        x1, y1 = event.xdata, event.ydata
+        rmin, rmax = sorted([y0, y1])
+        t0, t1 = x0, x1
+        twopi = 2 * np.pi
+        t0 = (t0 + twopi) % twopi
+        t1 = (t1 + twopi) % twopi
+        if (t1 - t0) % twopi > np.pi:
+            t0, t1 = t1, t0
+        if t1 <= t0:
+            t1 += twopi
+        try:
+            self.ax.set_xlim(t0, t1)
+        except Exception:
+            pass
+        self.ax.set_rlim(rmin, rmax)
+        self.canvas.draw_idle()
+        self._cleanup()
+
+    def _cleanup(self):
+        self.start = None
+        if self.rect is not None:
+            self.rect.remove()
+            self.rect = None
+        self.canvas.draw_idle()
+
+    @staticmethod
+    def _ctrl(event):
+        return event.key is not None and ('control' in event.key or 'ctrl' in event.key)
+
+
+class TabRMS(ttk.Frame):
+    def __init__(self, master, ax, canvas):
+        super().__init__(master)
+        self.ax = ax
+        self.canvas = canvas
+        
+        left = ttk.Frame(self)
+        left.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
+        
+        ttk.Label(left, text="MegiQ RMS file:", font=("", 11, "bold")).pack(anchor="w")
+        self.path_var = tk.StringVar(value="")
+        row = ttk.Frame(left)
+        row.pack(fill=tk.X, pady=6)
+        ttk.Entry(row, textvariable=self.path_var, width=45).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(row, text="Browse...", command=self.pick_file_main).pack(side=tk.LEFT)
+        
+        ttk.Label(left, text="Show planes (HV):", font=("", 10, "bold")).pack(anchor="w", pady=(10, 2))
+        self.var_xaw = tk.BooleanVar(value=True)
+        self.var_yet = tk.BooleanVar(value=True)
+        self.var_zuz = tk.BooleanVar(value=True)
+        ttk.Checkbutton(left, text="xawery (YZ)", variable=self.var_xaw, command=self.update_plot).pack(anchor="w")
+        ttk.Checkbutton(left, text="yeti (ZX)", variable=self.var_yet, command=self.update_plot).pack(anchor="w")
+        ttk.Checkbutton(left, text="zuzia (XY)", variable=self.var_zuz, command=self.update_plot).pack(anchor="w")
+        
+        ttk.Label(left, text="Pustelnik (separate file, HV only):", font=("", 10, "bold")).pack(anchor="w", pady=(12, 2))
+        self.pust_path_var = tk.StringVar(value="")
+        rowp = ttk.Frame(left)
+        rowp.pack(fill=tk.X, pady=4)
+        ttk.Entry(rowp, textvariable=self.pust_path_var, width=45).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(rowp, text="Browse...", command=self.pick_file_pust).pack(side=tk.LEFT)
+        self.var_pust = tk.BooleanVar(value=False)
+        ttk.Checkbutton(left, text="pustelnik (HV, yellow)", variable=self.var_pust, command=self.update_plot).pack(anchor="w")
+        
+        ttk.Button(left, text="Load and plot", command=self.load_files).pack(anchor="w", pady=(12, 0))
+        
+        ttk.Label(left, text="Legend (HV):", font=("", 10, "bold")).pack(anchor="w")
+        self.legend_frame = ttk.Frame(left)
+        self.legend_frame.pack(anchor="w", fill=tk.X, pady=(2, 8))
+        
+        ttk.Label(left, text="Zoom: CTRL+drag (box), scroll - radius, Home - reset").pack(anchor="w", pady=(6, 0))
+        
+        self.data_main = None
+        self.data_pust = None
+        self.update_legend([])
+
+    def update_legend(self, which):
+        for w in self.legend_frame.winfo_children():
+            w.destroy()
+        if not which:
+            ttk.Label(self.legend_frame, text="— none —", foreground="#777").pack(anchor="w")
+            return
+        def add_row(color, text):
+            row = ttk.Frame(self.legend_frame)
+            row.pack(anchor="w")
+            sw = tk.Canvas(row, width=28, height=8, highlightthickness=0)
+            sw.pack(side=tk.LEFT, padx=(0, 6), pady=2)
+            sw.create_line(2, 4, 26, 4, fill=color, width=3)
+            ttk.Label(row, text=text).pack(side=tk.LEFT)
+        for name in which:
+            add_row(HV_COLOR[name], f"{name} (HV)")
+
+    def pick_file_main(self):
+        p = filedialog.askopenfilename(
+            title="Select MegiQ RMS file",
+            filetypes=[("Text files", "*.txt;*.csv;*.dat"), ("All files", "*.*")]
+        )
+        if p:
+            self.path_var.set(p)
+
+    def pick_file_pust(self):
+        p = filedialog.askopenfilename(
+            title="Select Pustelnik file",
+            filetypes=[("Text files", "*.txt;*.csv;*.dat"), ("All files", "*.*")]
+        )
+        if p:
+            self.pust_path_var.set(p)
+            self.var_pust.set(True)
+
+    def load_files(self):
+        main_set = self.path_var.get().strip() != ""
+        pust_set = self.pust_path_var.get().strip() != ""
+        if not main_set and not pust_set:
+            messagebox.showwarning("No files", "Select at least one file: RMS or Pustelnik.")
+            return
+        if main_set:
+            try:
+                self.data_main = parse_megiq_txt(self.path_var.get().strip())
+            except Exception as e:
+                messagebox.showerror("RMS file error", f"Failed to read RMS file:\n{self.path_var.get()}\n\n{e}")
+                self.data_main = None
+        if pust_set:
+            try:
+                self.data_pust = parse_pustelnik_txt(self.pust_path_var.get().strip())
+            except Exception as e:
+                messagebox.showerror("Pustelnik error", f"Failed to read Pustelnik:\n{self.pust_path_var.get()}\n\n{e}")
+                self.data_pust = None
+        self.update_plot()
+
+    def update_plot(self):
+        series_list = []
+        legend_items = []
+        if self.data_main is not None:
+            angle = self.data_main["angle_deg"]
+            if self.var_xaw.get() and self.data_main["YZ"]["HV"] is not None:
+                series_list.append({"label": "xawery", "angle_deg": angle, "val": self.data_main["YZ"]["HV"], "color": HV_COLOR["xawery"]})
+                legend_items.append("xawery")
+            if self.var_yet.get() and self.data_main["ZX"]["HV"] is not None:
+                series_list.append({"label": "yeti", "angle_deg": angle, "val": self.data_main["ZX"]["HV"], "color": HV_COLOR["yeti"]})
+                legend_items.append("yeti")
+            if self.var_zuz.get() and self.data_main["XY"]["HV"] is not None:
+                series_list.append({"label": "zuzia", "angle_deg": angle, "val": self.data_main["XY"]["HV"], "color": HV_COLOR["zuzia"]})
+                legend_items.append("zuzia")
+        if self.var_pust.get() and self.data_pust is not None:
+            series_list.append({"label": "pustelnik", "angle_deg": self.data_pust["angle_deg"], "val": self.data_pust["HV"], "color": HV_COLOR["pustelnik"]})
+            legend_items.append("pustelnik")
+        if not series_list:
+            self.ax.clear()
+            self.ax.set_axis_off()
+            self.canvas.draw_idle()
+            self.update_legend([])
+            return
+        mn, mx, st = RMS_SCALE
+        draw_polar(self.ax, series_list, "HV overlay (fixed scale -10..+10 dB)", mn, mx, st)
+        self.canvas.draw_idle()
+        self.update_legend(legend_items)
+
+class TabThetaPhi(ttk.Frame):
+    def __init__(self, master, ax, canvas):
+        super().__init__(master)
+        self.ax = ax
+        self.canvas = canvas
+        self.items = []
+        self.colors = ["#d81b60", "#1e88e5", "#43a047", "#fdd835", "#8e24aa",
+                       "#e53935", "#00acc1", "#7cb342", "#fb8c00", "#3949ab"]
+        
+        left = ttk.Frame(self)
+        left.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
+        
+        ttk.Label(left, text="Multiple files (Theta/Phi/Abs(Dir.)[dBi]) - auto merge", font=("", 11, "bold")).pack(anchor="w")
+        
+        bar = ttk.Frame(left)
+        bar.pack(anchor="w", pady=(4, 6), fill=tk.X)
+        ttk.Button(bar, text="Add files...", command=self.add_files).pack(side=tk.LEFT)
+        ttk.Button(bar, text="Remove checked", command=self.remove_checked).pack(side=tk.LEFT, padx=6)
+        ttk.Button(bar, text="Remove hidden", command=self.remove_unchecked).pack(side=tk.LEFT)
+        ttk.Button(bar, text="Clear", command=self.clear_all).pack(side=tk.RIGHT)
+        
+        self.list_frame = ttk.LabelFrame(left, text="Files / visibility")
+        self.list_frame.pack(anchor="w", fill=tk.BOTH, expand=True, pady=(6, 4))
+        
+        ttk.Label(left, text="Legend (visible):", font=("", 10, "bold")).pack(anchor="w")
+        self.legend_frame = ttk.Frame(left)
+        self.legend_frame.pack(anchor="w", fill=tk.X, pady=(2, 8))
+        
+        ttk.Label(left, text="Zoom: CTRL+drag (box), scroll - radius, Home - reset").pack(anchor="w", pady=(2, 0))
+
+    def _rebuild_list(self):
+        for w in self.list_frame.winfo_children():
+            w.destroy()
+        if not self.items:
+            ttk.Label(self.list_frame, text="— no files —", foreground="#777").pack(anchor="w", padx=6, pady=6)
+            return
+        for idx, it in enumerate(self.items):
+            row = ttk.Frame(self.list_frame)
+            row.pack(anchor="w", fill=tk.X, padx=6, pady=2)
+            sw = tk.Canvas(row, width=28, height=10, highlightthickness=0)
+            sw.pack(side=tk.LEFT, padx=(0, 6))
+            sw.create_line(2, 5, 26, 5, fill=it["color"], width=3)
+            cb = ttk.Checkbutton(row, text=os.path.basename(it["path"]), variable=it["var"], command=self.draw)
+            cb.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            if it.get("used"):
+                ttk.Label(row, text=f"({it['used']})", foreground="#666").pack(side=tk.LEFT, padx=4)
+            ttk.Button(row, text="Remove", width=7, command=lambda i=idx: self.remove_index(i)).pack(side=tk.RIGHT)
+
+    def _legend(self, items):
+        for w in self.legend_frame.winfo_children():
+            w.destroy()
+        if not items:
+            ttk.Label(self.legend_frame, text="— none —", foreground="#777").pack(anchor="w")
+            return
+        for col, lab in items:
+            r = ttk.Frame(self.legend_frame)
+            r.pack(anchor="w")
+            sw = tk.Canvas(r, width=28, height=8, highlightthickness=0)
+            sw.pack(side=tk.LEFT, padx=(0, 6), pady=2)
+            sw.create_line(2, 4, 26, 4, fill=col, width=3)
+            ttk.Label(r, text=lab).pack(side=tk.LEFT)
+
+    def add_files(self):
+        paths = filedialog.askopenfilenames(
+            title="Select Theta/Phi files",
+            filetypes=[("Text files", "*.txt;*.dat;*.csv"), ("All files", "*.*")]
+        )
+        for p in paths:
+            try:
+                df = parse_theta_phi_file(p)
+                theta, db, used = auto_extract_tp_series(df, tol=2.0)
+            except Exception as e:
+                messagebox.showerror("File error", f"{os.path.basename(p)}\n{e}")
+                continue
+            color = self.colors[len(self.items) % len(self.colors)]
+            var = tk.BooleanVar(value=True)
+            var.trace_add("write", lambda *_: self.draw())
+            self.items.append({"path": p, "theta": theta, "db": db, "used": used, "var": var, "color": color})
+        self._rebuild_list()
+        self.draw()
+
+    def remove_index(self, idx):
+        if 0 <= idx < len(self.items):
+            self.items.pop(idx)
+            self._rebuild_list()
+            self.draw()
+
+    def remove_checked(self):
+        self.items = [it for it in self.items if not it["var"].get()]
+        self._rebuild_list()
+        self.draw()
+
+    def remove_unchecked(self):
+        self.items = [it for it in self.items if it["var"].get()]
+        self._rebuild_list()
+        self.draw()
+
+    def clear_all(self):
+        self.items.clear()
+        self._rebuild_list()
+        self.draw()
+
+    def draw(self):
+        vis = [it for it in self.items if it["var"].get()]
+        if not vis:
+            self.ax.clear()
+            self.ax.set_axis_off()
+            self.canvas.draw_idle()
+            self._legend([])
+            return
+        series = []
+        for it in vis:
+            theta_plot = (360.0 - it["theta"]) % 360.0
+            series.append({
+                "label": os.path.basename(it["path"]),
+                "angle_deg": theta_plot,
+                "val": it["db"],
+                "color": it["color"]
+            })
+        mn, mx, st = TP_SCALE
+        draw_polar(self.ax, series, "Abs(Dir.) [dBi] - auto φ (fixed scale -40..+20 dB)", mn, mx, st)
+        self.canvas.draw_idle()
+        self._legend([(s["color"], s["label"]) for s in series])
 
 class ValidatedDoubleVar(tk.DoubleVar):
     def __init__(self, *args, **kwargs):
@@ -984,6 +1479,51 @@ class App(tk.Tk):
         
         self.cvTDA.mpl_connect('button_press_event', self._onClickTDAnalysis)
 
+        frmPolar = ttk.Frame(nb)
+        nb.add(frmPolar, text="Polar Plots")
+
+        self.figPolar = plt.figure(figsize=(8.8, 7.8), constrained_layout=True)
+        self.axPolar = self.figPolar.add_subplot(111, projection="polar")
+        self.cvPolar = FigureCanvasTkAgg(self.figPolar, master=frmPolar)
+
+        plotFrame = ttk.Frame(frmPolar)
+        plotFrame.pack(fill=tk.BOTH, expand=True)
+
+        self.cvPolar.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        toolbar_frame = ttk.Frame(plotFrame)
+        toolbar_frame.pack(side=tk.BOTTOM, fill=tk.X)
+
+        self.tbPolar = NavigationToolbar2Tk(self.cvPolar, toolbar_frame)
+        self.tbPolar.update()
+        self.tbPolar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        self.boxzoomPolar = BoxZoom(self.axPolar, self.cvPolar)
+
+        def on_scroll_polar(event):
+            if event.inaxes != self.axPolar or event.ydata is None:
+                return
+            factor = 1.0 / 1.2 if event.step > 0 else 1.2
+            rmin, rmax = self.axPolar.get_rmin(), self.axPolar.get_rmax()
+            r0 = event.ydata
+            new_rmin = r0 + (rmin - r0) * factor
+            new_rmax = r0 + (rmax - r0) * factor
+            if new_rmax - new_rmin < 1e-3:
+                return
+            self.axPolar.set_rlim(new_rmin, new_rmax)
+            self.cvPolar.draw_idle()
+
+        self.cvPolar.mpl_connect("scroll_event", on_scroll_polar)
+
+        polarNB = ttk.Notebook(frmPolar)
+        polarNB.pack(side=tk.LEFT, fill=tk.BOTH, padx=6, pady=6)
+
+        self.tabPolarRMS = TabRMS(polarNB, self.axPolar, self.cvPolar)
+        self.tabPolarTP = TabThetaPhi(polarNB, self.axPolar, self.cvPolar)
+
+        polarNB.add(self.tabPolarRMS, text="RMS + Pustelnik")
+        polarNB.add(self.tabPolarTP, text="Theta/Phi")
+
     def _updateColorInfo(self):
         if self.regexSmallDiffChk.get():
             threshold = self.regexSmallDiffThreshold.get()
@@ -1706,6 +2246,19 @@ class App(tk.Tk):
             self.extremaBox.pack_forget()
             self.tdAnalysisBox.pack(anchor="w", pady=(2,0))
             self._updTDAnalysisPlot()
+        elif tabTxt == "Polar Plots":
+            self.tab = "polar"
+            self.cbox.pack_forget()
+            self.rbox.pack_forget()
+            self.gateBox.pack_forget()
+            self.regexBox.pack_forget()
+            self.overlapBox.pack_forget()
+            self.varBox.pack_forget()
+            self.trainBox.pack_forget()
+            self.shapeBox.pack_forget()
+            self.integBox.pack_forget()
+            self.extremaBox.pack_forget()
+            self.tdAnalysisBox.pack_forget()
 
 
     def _addFiles(self):
