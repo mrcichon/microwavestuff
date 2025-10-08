@@ -1541,7 +1541,7 @@ class App(tk.Tk):
     def _avgFiles(self):
         dialog = tk.Toplevel(self)
         dialog.title("Average S-parameter files")
-        dialog.geometry("400x580")  # Taller for 3 options
+        dialog.geometry("450x650")
         dialog.transient(self)
         dialog.grab_set()
         
@@ -1550,7 +1550,7 @@ class App(tk.Tk):
         mode = tk.StringVar(value="loaded")
         ttk.Radiobutton(dialog, text="Average loaded files", variable=mode, value="loaded").pack(anchor="w", padx=20)
         ttk.Radiobutton(dialog, text="Load and average new files", variable=mode, value="new").pack(anchor="w", padx=20)
-        ttk.Radiobutton(dialog, text="Load folder structure (each subfolder → one average)", 
+        ttk.Radiobutton(dialog, text="Load folder structure (group by base name)", 
                        variable=mode, value="folder").pack(anchor="w", padx=20)
         
         ttk.Separator(dialog, orient="horizontal").pack(fill="x", pady=10)
@@ -1577,6 +1577,38 @@ class App(tk.Tk):
         nameVar = tk.StringVar(value=f"average_{self.avgCounter+1}")
         ttk.Entry(nameFrame, textvariable=nameVar, width=30).pack(side=tk.LEFT, padx=(5,0))
         
+        regexFrame = ttk.LabelFrame(dialog, text="Folder mode: Grouping pattern")
+        regexFrame.pack(fill="x", padx=10, pady=(10,5))
+        
+        ttk.Label(regexFrame, text="Regex to extract base name (must have 1 capture group):").pack(anchor="w", padx=5, pady=(5,2))
+        regexVar = tk.StringVar(value=r'^(.+)_\d+$')
+        regexEntry = ttk.Entry(regexFrame, textvariable=regexVar, width=50)
+        regexEntry.pack(anchor="w", padx=5, pady=(0,5), fill="x")
+        
+        exampleFrame = ttk.Frame(regexFrame)
+        exampleFrame.pack(anchor="w", padx=5, pady=(0,5), fill="x")
+        ttk.Label(exampleFrame, text="Examples:", font=("", 8, "bold")).pack(anchor="w")
+        ttk.Label(exampleFrame, text=r"^(.+)_\d+$  → groups 'sample_1', 'sample_2' as 'sample'", 
+                 font=("", 8), foreground="gray").pack(anchor="w", padx=(10,0))
+        ttk.Label(exampleFrame, text=r"^(.+?)_\d+_\d+$  → groups 'test_1_1', 'test_1_2' as 'test'", 
+                 font=("", 8), foreground="gray").pack(anchor="w", padx=(10,0))
+        ttk.Label(exampleFrame, text=r"^(.*?)_run\d+$  → groups 'exp_run1', 'exp_run2' as 'exp'", 
+                 font=("", 8), foreground="gray").pack(anchor="w", padx=(10,0))       
+        def validate_regex(*args):
+            try:
+                pattern = regexVar.get()
+                re.compile(pattern)
+                test_match = re.match(pattern, "test_1")
+                if test_match and len(test_match.groups()) >= 1:
+                    regexEntry.configure(foreground="black")
+                else:
+                    regexEntry.configure(foreground="orange")
+            except:
+                regexEntry.configure(foreground="red")
+        
+        regexVar.trace('w', validate_regex)
+        validate_regex()
+        
         def process():
             if mode.get() == "loaded":
                 selected = listbox.curselection()
@@ -1592,7 +1624,7 @@ class App(tk.Tk):
                 self._loadAndAverage(nameVar.get())
             else:
                 dialog.destroy()
-                self._loadAndAverageFolderStructure()
+                self._loadAndAverageFolderStructure(regexVar.get())
         
         buttonFrame = ttk.Frame(dialog)
         buttonFrame.pack(pady=10)
@@ -1604,12 +1636,19 @@ class App(tk.Tk):
         y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
         dialog.geometry(f"+{x}+{y}")
 
-    def _loadAndAverageFolderStructure(self):
+
+    def _loadAndAverageFolderStructure(self, grouping_regex):
         parent_dir = filedialog.askdirectory(
-            title="Select parent folder (each subfolder will become one average)"
+            title="Select parent folder (each subfolder will be processed)"
         )
         
         if not parent_dir:
+            return
+        
+        try:
+            pattern = re.compile(grouping_regex)
+        except Exception as e:
+            messagebox.showerror("Invalid Regex", f"Regex pattern is invalid:\n{str(e)}")
             return
         
         try:
@@ -1621,8 +1660,8 @@ class App(tk.Tk):
                                      f"No subfolders found in:\n{parent_dir}")
                 return
             
-            created_count = 0
-            skipped = []
+            total_created = 0
+            details = []
             
             for subdir_name in sorted(subdirs):
                 subdir_path = os.path.join(parent_dir, subdir_name)
@@ -1633,58 +1672,87 @@ class App(tk.Tk):
                         if file.lower().endswith(('.s1p', '.s2p', '.s3p')):
                             s_files.append(os.path.join(root, file))
                 
-                if len(s_files) < 2:
-                    skipped.append(f"{subdir_name} ({len(s_files)} file(s))")
+                if not s_files:
+                    details.append(f"  {subdir_name}: no S-parameter files")
                     continue
                 
-                networks = []
+                groups = {}
+                ungrouped = []
+                
                 for filepath in s_files:
-                    try:
-                        ntw = loadFile(filepath)
-                        networks.append(ntw)
-                    except:
-                        pass
+                    filename = Path(filepath).stem
+                    match = pattern.match(filename)
+                    
+                    if match and len(match.groups()) >= 1:
+                        base_name = match.group(1)
+                        if base_name not in groups:
+                            groups[base_name] = []
+                        groups[base_name].append(filepath)
+                    else:
+                        ungrouped.append(filename)
                 
-                if len(networks) < 2:
-                    skipped.append(f"{subdir_name} (failed to load enough files)")
-                    continue
+                subdir_created = 0
                 
-                avg_network = self._computeAverage(networks)
+                for base_name, file_list in sorted(groups.items()):
+                    if len(file_list) < 2:
+                        details.append(f"  {subdir_name}/{base_name}: only 1 file, skipped")
+                        continue
+                    
+                    networks = []
+                    for filepath in file_list:
+                        try:
+                            ntw = loadFile(filepath)
+                            networks.append(ntw)
+                        except:
+                            pass
+                    
+                    if len(networks) < 2:
+                        details.append(f"  {subdir_name}/{base_name}: failed to load enough files")
+                        continue
+                    
+                    avg_network = self._computeAverage(networks)
+                    
+                    if avg_network is None:
+                        details.append(f"  {subdir_name}/{base_name}: averaging failed")
+                        continue
+                    
+                    self.avgCounter += 1
+                    avg_name = f"{subdir_name}_{base_name}"
+                    v = tk.BooleanVar(value=True)
+                    chk = tk.Checkbutton(self.fbox, text=f"[AVG] {avg_name}", 
+                                       variable=v, command=self._updAll, 
+                                       fg="blue", activeforeground="blue")
+                    chk.pack(anchor="w")
+                    
+                    avg_path = f"<average_{self.avgCounter}>"
+                    d = {
+                        'ntwk_full': avg_network,
+                        'is_average': True,
+                        'source_files': file_list,
+                        'line_color': None,
+                        'line_width': 2.0,
+                        'custom_name': avg_name
+                    }
+                    
+                    chk.bind("<Button-3>", lambda e, path=avg_path: self._showStyleMenu(e, path))
+                    self.fls.append((v, avg_path, d))
+                    subdir_created += 1
+                    total_created += 1
                 
-                if avg_network is None:
-                    skipped.append(f"{subdir_name} (averaging failed)")
-                    continue
+                if subdir_created > 0:
+                    details.append(f"  {subdir_name}: created {subdir_created} average(s)")
                 
-                self.avgCounter += 1
-                avg_name = subdir_name
-                v = tk.BooleanVar(value=True)
-                chk = tk.Checkbutton(self.fbox, text=f"[AVG] {avg_name}", 
-                                   variable=v, command=self._updAll, 
-                                   fg="blue", activeforeground="blue")
-                chk.pack(anchor="w")
-                
-                avg_path = f"<average_{self.avgCounter}>"
-                d = {
-                    'ntwk_full': avg_network,
-                    'is_average': True,
-                    'source_files': s_files,
-                    'line_color': None,
-                    'line_width': 2.0,
-                    'custom_name': avg_name
-                }
-                
-                chk.bind("<Button-3>", lambda e, path=avg_path: self._showStyleMenu(e, path))
-                self.fls.append((v, avg_path, d))
-                created_count += 1
+                if ungrouped:
+                    details.append(f"  {subdir_name}: {len(ungrouped)} file(s) didn't match pattern")
             
             self.fileListCanvas.configure(scrollregion=self.fileListCanvas.bbox("all"))
             self._updAll()
             
-            msg = f"Created {created_count} average(s) from {len(subdirs)} subfolder(s)"
-            if skipped:
-                msg += f"\n\nSkipped {len(skipped)} subfolder(s):\n" + "\n".join(f"  • {s}" for s in skipped[:10])
-                if len(skipped) > 10:
-                    msg += f"\n  ... and {len(skipped) - 10} more"
+            msg = f"Created {total_created} average(s) from {len(subdirs)} subfolder(s)\n"
+            msg += f"Grouping pattern: {grouping_regex}\n\n"
+            msg += "Details:\n" + "\n".join(details[:20])
+            if len(details) > 20:
+                msg += f"\n... and {len(details) - 20} more lines"
             
             messagebox.showinfo("Batch Averaging Complete", msg)
             
