@@ -260,7 +260,6 @@ def auto_extract_tp_series(df, tol=2.0):
         if theta.size and abs(theta[-1]-360.0) < 1e-6:
             theta, db = theta[:-1], db[:-1]
         used = f"φ≈{phi_a}° & {phi_b}°"
-        return theta, db, used
     else:
         a = df[np.isclose(df["phi_deg"], phi_a, atol=tol)].sort_values("theta_deg")
         theta = a["theta_deg"].to_numpy()
@@ -274,7 +273,19 @@ def auto_extract_tp_series(df, tol=2.0):
             theta = np.concatenate([theta, theta2])
             db    = np.concatenate([db, db2])
         used = f"φ≈{phi_a}°"
-        return theta, db, used
+    
+    # Close the loop: add first point at the end (0° = 360°)
+    if theta.size > 0:
+        # Check if we need to close (not already at 360°)
+        if abs(theta[-1] - 360.0) > 1e-3:
+            theta = np.append(theta, 360.0)
+            db = np.append(db, db[0])
+        # Or if starting from non-zero, prepend 0°
+        elif abs(theta[0]) > 1e-3:
+            theta = np.insert(theta, 0, 0.0)
+            db = np.insert(db, 0, db[-1])
+    
+    return theta, db, used
 
 # ===================== KOLORY =====================
 # Kolory dla płaszczyzn (linear HV)
