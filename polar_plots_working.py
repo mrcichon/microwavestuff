@@ -1102,7 +1102,7 @@ class TabAll(ttk.Frame):
                 var.trace_add("write", lambda *_: self.draw())
                 self.items.append({
                     "type": "tp",
-                    "label": f"{os.path.splitext(os.path.basename(path))[0]}",
+                    "label": f"{os.path.splitext(os.path.basename(p))[0]}",
                     "angle": theta_plot,
                     "val": db,
                     "var": var,
