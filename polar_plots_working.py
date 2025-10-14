@@ -310,7 +310,7 @@ CIRCULAR_COLOR = {
 }
 
 # ===================== RYSOWANIE =====================
-def draw_polar(ax, series_list, title_text, min_db, max_db, grid_step):
+def draw_polar(ax, series_list, title_text, min_db, max_db, grid_step, show_legend=True):
     """series_list: [{'label','angle_deg','val','color'}, ...]"""
     print(f"\n=== DRAW_POLAR called ===")
     print(f"  Title: {title_text}")
@@ -350,6 +350,13 @@ def draw_polar(ax, series_list, title_text, min_db, max_db, grid_step):
     ax.set_xticklabels([f"{d}°" for d in range(0, 360, 45)], color="#444")
     ax.grid(True, color="#cccccc", alpha=0.9)
     ax.set_title(title_text, color="#111", pad=12, fontsize=12)
+    
+    # Add legend to the plot
+    if show_legend and len(series_list) > 0:
+        ax.legend(loc='best', bbox_to_anchor=(1.05, 1), 
+                 frameon=True, fancybox=True, shadow=True,
+                 fontsize=9, ncol=1)
+    
     print("  ✓ draw_polar complete")
 
 # ===================== BOX-ZOOM (CTRL + drag) =====================
@@ -360,10 +367,9 @@ class DebugRedirect:
         self.buffer = []
         
     def write(self, message):
-        if message.strip():  # Only log non-empty messages
+        if message.strip():  
             self.text_widget.config(state=tk.NORMAL)
             self.text_widget.insert(tk.END, message)
-            # Keep only last 100 lines
             lines = int(self.text_widget.index('end-1c').split('.')[0])
             if lines > 150:
                 self.text_widget.delete('1.0', f'{lines-100}.0')
@@ -460,7 +466,6 @@ class TabRMS(ttk.Frame):
 
         ttk.Button(left, text="Wczytaj i narysuj", command=self.load_files).pack(anchor="w", pady=(12,0))
         
-        # Status/debug area
         self.status_label = tk.Label(left, text="Status: Czekam na plik...", bg="#f5f5f5", fg="#666", 
                                      wraplength=400, justify="left", font=("Segoe UI", 9))
         self.status_label.pack(anchor="w", pady=(8,0))
@@ -496,13 +501,11 @@ class TabRMS(ttk.Frame):
         self.data_pust = None
         self.polarization_type = None  # "linear" lub "circular"
         
-        # Zmienne dla checkboxów - będą tworzone dynamicznie
         self.checkbox_vars = {}
         
         self.update_legend([])
         self._build_initial_checkboxes()
         
-        # Redirect stdout to debug widget
         import sys
         self.original_stdout = sys.stdout
         sys.stdout = DebugRedirect(self.debug_text)
@@ -511,7 +514,6 @@ class TabRMS(ttk.Frame):
         """Add message to debug text widget"""
         self.debug_text.config(state=tk.NORMAL)
         self.debug_text.insert(tk.END, message + "\n")
-        # Keep only last 100 lines
         lines = int(self.debug_text.index('end-1c').split('.')[0])
         if lines > 100:
             self.debug_text.delete('1.0', f'{lines-100}.0')
@@ -1068,7 +1070,7 @@ class TabAll(ttk.Frame):
                         item_var.trace_add("write", lambda *_: self.draw())
                         self.items.append({
                             "type": "rms",
-                            "label": f"{os.path.basename(path)} - {label}",
+                            "label": f"{os.path.splitext(os.path.basename(path))[0]}",
                             "angle": angle,
                             "val": val_data,
                             "var": item_var,
@@ -1100,7 +1102,7 @@ class TabAll(ttk.Frame):
                 var.trace_add("write", lambda *_: self.draw())
                 self.items.append({
                     "type": "tp",
-                    "label": f"{os.path.basename(p)} ({used})",
+                    "label": f"{os.path.splitext(os.path.basename(path))[0]}",
                     "angle": theta_plot,
                     "val": db,
                     "var": var,
@@ -1129,7 +1131,7 @@ class TabAll(ttk.Frame):
             var.trace_add("write", lambda *_: self.draw())
             self.items.append({
                 "type": "pustelnik",
-                "label": f"{os.path.basename(path)} (Pustelnik HV)",
+                "label": f"{os.path.splitext(os.path.basename(path))[0]}",
                 "angle": data["angle_deg"],
                 "val": data["HV"],
                 "var": var,
@@ -1154,16 +1156,13 @@ class TabAll(ttk.Frame):
             row = tk.Frame(self.list_frame, bg="#f5f5f5")
             row.pack(anchor="w", fill=tk.X, padx=6, pady=2)
             
-            # Color swatch
             sw = tk.Canvas(row, width=28, height=10, bg="#f5f5f5", highlightthickness=0)
             sw.pack(side=tk.LEFT, padx=(0,6))
             sw.create_line(2,5,26,5, fill=it["color"], width=3)
             
-            # Checkbox
             cb = ttk.Checkbutton(row, text=it["label"], variable=it["var"])
             cb.pack(side=tk.LEFT, fill=tk.X, expand=True)
             
-            # Remove button
             ttk.Button(row, text="Usuń", width=7,
                       command=lambda i=idx: self.remove_index(i)).pack(side=tk.RIGHT)
 
