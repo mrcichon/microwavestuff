@@ -32,6 +32,8 @@ class TabRegex:
         self.regex_small_ref = tk.DoubleVar(value=10.0)
         self.regex_small_count = tk.IntVar(value=1)
         self.regex_gate = tk.BooleanVar(value=False)
+        self.regex_gate_center = tk.DoubleVar(value=5.0)
+        self.regex_gate_span = tk.DoubleVar(value=0.5)
         self.regex_phase = tk.BooleanVar(value=False)
         
         self.regex_ranges = []
@@ -41,7 +43,6 @@ class TabRegex:
         self._build_ui()
     
     def _build_ui(self):
-        # Main control bar
         frame = ttk.Frame(self.parent)
         frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
         
@@ -64,6 +65,19 @@ class TabRegex:
         
         ttk.Separator(frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
+        ttk.Checkbutton(frame, text="Gating", variable=self.regex_gate,
+                       command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Label(frame, text="Center[ns]").pack(side=tk.LEFT, padx=(5,2))
+        gate_center_entry = ttk.Entry(frame, textvariable=self.regex_gate_center, width=5)
+        gate_center_entry.pack(side=tk.LEFT, padx=2)
+        gate_center_entry.bind("<Return>", lambda e: self.update())
+        ttk.Label(frame, text="Span[ns]").pack(side=tk.LEFT, padx=(5,2))
+        gate_span_entry = ttk.Entry(frame, textvariable=self.regex_gate_span, width=5)
+        gate_span_entry.pack(side=tk.LEFT, padx=2)
+        gate_span_entry.bind("<Return>", lambda e: self.update())
+        
+        ttk.Separator(frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        
         ttk.Checkbutton(frame, text="Highlight monotonic",
                        variable=self.regex_highlight, command=self.update).pack(side=tk.LEFT, padx=2)
         ttk.Checkbutton(frame, text="Strict",
@@ -73,18 +87,19 @@ class TabRegex:
         
         ttk.Button(frame, text="Export", command=self._export_ranges).pack(side=tk.LEFT, padx=10)
         
-        # Secondary bar for advanced options
         frame2 = ttk.Frame(self.parent)
         frame2.pack(side=tk.TOP, fill=tk.X, padx=10, pady=2)
         
         ttk.Checkbutton(frame2, text="Small diffs",
                        variable=self.regex_small_diff, command=self.update).pack(side=tk.LEFT, padx=2)
         ttk.Label(frame2, text="Tol:").pack(side=tk.LEFT, padx=(5,2))
-        ttk.Entry(frame2, textvariable=self.regex_small_threshold,
-                 width=5).pack(side=tk.LEFT, padx=2)
+        small_tol_entry = ttk.Entry(frame2, textvariable=self.regex_small_threshold, width=5)
+        small_tol_entry.pack(side=tk.LEFT, padx=2)
+        small_tol_entry.bind("<Return>", lambda e: self.update())
         ttk.Label(frame2, text="@").pack(side=tk.LEFT, padx=2)
-        ttk.Entry(frame2, textvariable=self.regex_small_ref,
-                 width=5).pack(side=tk.LEFT, padx=2)
+        small_ref_entry = ttk.Entry(frame2, textvariable=self.regex_small_ref, width=5)
+        small_ref_entry.pack(side=tk.LEFT, padx=2)
+        small_ref_entry.bind("<Return>", lambda e: self.update())
         ttk.Label(frame2, text="dB").pack(side=tk.LEFT, padx=(0,10))
         
         ttk.Separator(frame2, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
@@ -98,7 +113,6 @@ class TabRegex:
                   command=lambda: self._set_pattern(r'(\d+)cm')).pack(side=tk.LEFT, padx=2)
         
         self.control_panel = frame
-
 
     def _on_regex_change(self, event=None):
         pattern = self.regex_pattern.get()
@@ -144,7 +158,16 @@ class TabRegex:
                     
                     ntw = ntw_full[sstr]
                     
-                    raw_data = getattr(ntw, param)
+                    if self.regex_gate.get():
+                        raw_param = getattr(ntw, param)
+                        gated_param = raw_param.time_gate(
+                            center=self.regex_gate_center.get(),
+                            span=self.regex_gate_span.get()
+                        )
+                        raw_data = gated_param
+                    else:
+                        raw_data = getattr(ntw, param)
+                    
                     freq = ntw.f
                     
                     if self.regex_phase.get():
@@ -178,7 +201,6 @@ class TabRegex:
             self.last_result = None
             return
         
-        # Analyze for monotonic ranges
         analysis_data = [(f, v, fr, sd) for f, v, fr, sd, _ in files_data]
         ranges, freqs, s_matrix, labels, small_diff_ranges = analyze_ordered_ranges(
             analysis_data,
@@ -190,10 +212,8 @@ class TabRegex:
         
         self.regex_ranges = ranges
         
-        # Sort by value
         files_data.sort(key=lambda x: x[1])
         
-        # Plot data
         legend_items = []
         for i, (fname, value, freq, s_data, file_dict) in enumerate(files_data):
             kwargs = {'label': fname}
@@ -208,7 +228,6 @@ class TabRegex:
             line = ax.plot(freq, s_data, **kwargs)[0]
             legend_items.append((fname, matplotlib.colors.to_hex(line.get_color())))
         
-        # Draw highlights
         for span in self.regex_spans:
             try:
                 span.remove()
@@ -233,6 +252,8 @@ class TabRegex:
         title = f"Regex-based ordering: {self.regex_pattern.get()} (group {self.regex_group.get()})"
         if self.regex_phase.get():
             title += " — Phase"
+        if self.regex_gate.get():
+            title += f" [Gated: {self.regex_gate_center.get()}±{self.regex_gate_span.get()/2}ns]"
         ax.set_title(title)
         ax.grid(True)
         
@@ -305,6 +326,8 @@ class TabRegex:
                 f.write(f"# S-parameter: {self.regex_param.get().upper()}\n")
                 mode = "Strict monotonic" if self.regex_strict.get() else "Non-strict monotonic"
                 f.write(f"# Monotonicity mode: {mode}\n")
+                if self.regex_gate.get():
+                    f.write(f"# Time gating: Center={self.regex_gate_center.get()}ns, Span={self.regex_gate_span.get()}ns\n")
                 f.write(f"# Format: start_freq end_freq (Hz)\n")
                 f.write("#\n")
                 for start, end in self.regex_ranges:

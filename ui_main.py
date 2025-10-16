@@ -303,7 +303,7 @@ class App(tk.Tk):
             get_freq_range_func=self.get_freq_range,
             get_legend_on_plot_func=lambda: self.legendOnPlot.get()
         )
-    
+        
     def _create_overlap_tab(self):
         frmO = ttk.Frame(self.nb)
         self.nb.add(frmO, text="Range Overlaps")
@@ -322,9 +322,10 @@ class App(tk.Tk):
             ax=self.axO,
             canvas=self.cvO,
             get_files_func=self.get_files,
-            get_freq_range_func=self.get_freq_range
+            get_freq_range_func=self.get_freq_range,
+            get_regex_tab_func=lambda: self.tab_regex
         )
-    
+
     def _create_variance_tab(self):
         frmV = ttk.Frame(self.nb)
         self.nb.add(frmV, text="Variance Analysis")

@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from pathlib import Path
@@ -9,13 +9,14 @@ from analysis_overlap import parse_frequency_file, find_overlaps, format_overlap
 
 class TabOverlap:
     def __init__(self, parent, fig, ax, canvas,
-                 get_files_func, get_freq_range_func):
+                 get_files_func, get_freq_range_func, get_regex_tab_func):
         self.parent = parent
         self.fig = fig
         self.ax = ax
         self.canvas = canvas
         self.get_files = get_files_func
         self.get_freq_range = get_freq_range_func
+        self.get_regex_tab = get_regex_tab_func
         
         self.overlap_data = {}
         self.last_result = None
@@ -37,7 +38,6 @@ class TabOverlap:
         ttk.Button(frame, text="Clear plot",
                   command=self._clear_plot).pack(side=tk.LEFT, padx=2)
         
-        # Info text goes below, takes remaining vertical space
         info_frame = ttk.LabelFrame(self.parent, text="Loaded Data")
         info_frame.pack(fill="both", expand=True, padx=10, pady=5)
         
@@ -46,7 +46,6 @@ class TabOverlap:
         self.info_text.config(state=tk.DISABLED)
         
         self.control_panel = frame
-
 
     def _load_range_files(self):
         files = filedialog.askopenfilenames(
@@ -65,14 +64,34 @@ class TabOverlap:
         self.update()
     
     def _analyze_from_regex(self):
-        # This would need access to regex tab data
-        # For now, show a placeholder dialog
-        messagebox.showinfo("Analyze from Regex",
-                          "This would import ranges from the Regex tab.\nRun regex analysis first, then use this feature.")
+        regex_tab = self.get_regex_tab()
+        
+        if regex_tab is None or regex_tab.last_result is None:
+            messagebox.showwarning("No regex data", 
+                                 "Run regex analysis first in the Regex Highlighting tab.")
+            return
+        
+        if not regex_tab.regex_ranges:
+            messagebox.showwarning("No ranges found",
+                                 "No monotonic ranges found in regex analysis.")
+            return
+        
+        name = simpledialog.askstring("Range Name", 
+                                     "Enter name for this range set:",
+                                     initialvalue=f"regex_{regex_tab.regex_param.get()}")
+        
+        if not name:
+            return
+        
+        ranges_ghz = [(start/1e9, end/1e9) for start, end in regex_tab.regex_ranges]
+        self.overlap_data[name] = ranges_ghz
+        self.update()
+        messagebox.showinfo("Import successful", 
+                          f"Imported {len(ranges_ghz)} range(s) as '{name}'")
     
     def _export_overlaps(self):
-        if not self.overlap_data:
-            messagebox.showinfo("No data", "No overlap data to export")
+        if not self.last_result:
+            messagebox.showinfo("No data", "No overlap data to export.")
             return
         
         filename = filedialog.asksaveasfilename(
@@ -82,20 +101,20 @@ class TabOverlap:
         )
         
         if filename:
-            with open(filename, 'w', encoding='utf-8') as f:
-                f.write(format_overlap_text(self.overlap_data))
-            
+            with open(filename, 'w') as f:
+                f.write(self.last_result)
             messagebox.showinfo("Export complete", f"Overlap analysis saved to {filename}")
     
     def _clear_plot(self):
         self.overlap_data = {}
+        self.last_result = None
         self.update()
     
     def update(self):
         self.ax.clear()
         
         if not self.overlap_data:
-            self.ax.text(0.5, 0.5, "Load frequency range files to visualize overlaps",
+            self.ax.text(0.5, 0.5, "Load range files or import from regex",
                         ha="center", va="center", fontsize=12, color="gray")
             self.ax.set_xticks([])
             self.ax.set_yticks([])
@@ -103,60 +122,65 @@ class TabOverlap:
             
             self.info_text.config(state=tk.NORMAL)
             self.info_text.delete(1.0, tk.END)
-            self.info_text.insert(tk.END, "No data loaded")
             self.info_text.config(state=tk.DISABLED)
-            
-            self.last_result = None
             return
         
-        # Plot ranges
-        colors = cycle(['#1f77b4', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#17becf'])
-        y_positions = {}
-        legend_elements = []
+        colors = cycle(['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray'])
+        y_pos = 0
+        legend_handles = []
+        all_freqs = []
         
-        for i, (name, ranges) in enumerate(sorted(self.overlap_data.items())):
-            color = next(colors)
-            y_positions[name] = i
-            for start, end in ranges:
-                self.ax.plot([start, end], [i, i], color=color, linewidth=4)
-            legend_elements.append(mpatches.Patch(color=color, label=f"{name}"))
-        
-        # Find and plot overlaps
         from itertools import combinations
-        for (name1, r1), (name2, r2) in combinations(self.overlap_data.items(), 2):
+        overlap_regions = []
+        for (n1, r1), (n2, r2) in combinations(self.overlap_data.items(), 2):
             overlaps = find_overlaps(r1, r2)
-            for s, e in overlaps:
-                y1, y2 = y_positions[name1], y_positions[name2]
-                ymin, ymax = sorted([y1, y2])
-                self.ax.fill_betweenx([ymin - 0.15, ymax + 0.15], s, e, color='red', alpha=0.3)
+            overlap_regions.extend(overlaps)
         
-        # Set labels and formatting
-        self.ax.set_yticks(list(y_positions.values()))
-        ylabels = list(y_positions.keys())
-        if len(ylabels) > 15:
-            self.ax.set_yticklabels(ylabels, fontsize=8)
-        else:
-            self.ax.set_yticklabels(ylabels)
+        for start, end in overlap_regions:
+            self.ax.axvspan(start, end, color='green', alpha=0.2, zorder=0)
         
-        self.ax.set_xlabel("Frequency (GHz)")
-        self.ax.set_title("Frequency ranges and overlaps")
-        self.ax.grid(True, linestyle='--', alpha=0.5)
+        for name, ranges in sorted(self.overlap_data.items()):
+            color = next(colors)
+            if not ranges:
+                y_pos += 1
+                continue
+                
+            for start, end in ranges:
+                all_freqs.extend([start, end])
+                rect = mpatches.Rectangle((start, y_pos), end - start, 0.8,
+                                         facecolor=color, alpha=0.6, edgecolor='black', zorder=1)
+                self.ax.add_patch(rect)
+            
+            legend_handles.append(mpatches.Patch(color=color, label=name, alpha=0.6))
+            y_pos += 1
         
-        if len(legend_elements) <= 10:
-            self.ax.legend(handles=legend_elements + [mpatches.Patch(color='red', alpha=0.3, label='Overlaps')])
+        self.ax.set_xlabel("Frequency [GHz]")
+        self.ax.set_ylabel("Range Set")
+        self.ax.set_title("Frequency Range Overlaps")
+        self.ax.set_ylim(-0.5, len(self.overlap_data) + 0.5)
+        self.ax.set_yticks(range(len(self.overlap_data)))
+        self.ax.set_yticklabels(sorted(self.overlap_data.keys()))
+        
+        if all_freqs:
+            freq_min = min(all_freqs)
+            freq_max = max(all_freqs)
+            margin = (freq_max - freq_min) * 0.05
+            self.ax.set_xlim(freq_min - margin, freq_max + margin)
+        
+        self.ax.grid(True, axis='x')
+        if legend_handles:
+            self.ax.legend(handles=legend_handles, loc='best')
         
         self.fig.tight_layout()
         self.canvas.draw()
         
-        # Update info text
+        result_text = format_overlap_text(self.overlap_data)
+        self.last_result = result_text
+        
         self.info_text.config(state=tk.NORMAL)
         self.info_text.delete(1.0, tk.END)
-        self.info_text.insert(tk.END, format_overlap_text(self.overlap_data))
+        self.info_text.insert(tk.END, result_text)
         self.info_text.config(state=tk.DISABLED)
-        
-        self.last_result = self.overlap_data
     
     def get_text_output(self):
-        if self.last_result is None:
-            return ""
-        return format_overlap_text(self.last_result)
+        return self.last_result if self.last_result else ""
