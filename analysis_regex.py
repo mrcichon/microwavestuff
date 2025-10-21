@@ -29,13 +29,11 @@ def analyze_ordered_ranges(files_data, strict_monotonic=False, threshold=0.1, re
     if not files_data:
         return [], None, None, [], []
     
-    # Sort by extracted value
     files_data.sort(key=lambda x: x[1])
     labels = [d[0] for d in files_data]
     freqs = files_data[0][2]
     s_matrix = np.array([d[3] for d in files_data])
     
-    # Find monotonic regions
     monotonic_indices = []
     for i in range(s_matrix.shape[1]):
         values = s_matrix[:, i]
@@ -52,7 +50,6 @@ def analyze_ordered_ranges(files_data, strict_monotonic=False, threshold=0.1, re
         if is_monotonic:
             monotonic_indices.append(i)
     
-    # Convert indices to frequency ranges
     freq_ranges = []
     if monotonic_indices:
         start = monotonic_indices[0]
@@ -63,7 +60,6 @@ def analyze_ordered_ranges(files_data, strict_monotonic=False, threshold=0.1, re
                 start = monotonic_indices[i]
         freq_ranges.append((freqs[start], freqs[monotonic_indices[-1]]))
     
-    # Find small difference regions
     small_diff_ranges = []
     if monotonic_indices:
         for i in monotonic_indices:
@@ -83,7 +79,6 @@ def analyze_ordered_ranges(files_data, strict_monotonic=False, threshold=0.1, re
             if small_diff_count >= min_count:
                 small_diff_ranges.append((freqs[i], freqs[i]))
     
-    # Merge adjacent small diff ranges
     merged_small_diff_ranges = []
     if small_diff_ranges:
         start_freq = small_diff_ranges[0][0]

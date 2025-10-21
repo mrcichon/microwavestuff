@@ -20,10 +20,8 @@ def compute_shape_matrix(files_data, param, metric='xcorr', normalize=True, max_
     if n < 2:
         return None
     
-    # Align signals to same frequency grid
     signals, freqs = _align_signals(files_data)
     
-    # Calculate adaptive weights if needed
     weights = None
     activity = None
     if metric in ['al1', 'al2'] and adaptive_params:
@@ -34,7 +32,6 @@ def compute_shape_matrix(files_data, param, metric='xcorr', normalize=True, max_
         weights = _compute_adaptive_weights(activity, adaptive_params['gamma'], 
                                            adaptive_params['w_min'])
     
-    # Compute distance/correlation matrix
     matrix = np.zeros((n, n))
     lag_matrix = np.zeros((n, n))
     
@@ -134,7 +131,6 @@ def format_shape_text(shape_data, metric):
     return "\n".join(lines)
 
 
-# Helper functions
 def _align_signals(files_data):
     """Align signals to common frequency grid."""
     f0 = files_data[0]['freq']

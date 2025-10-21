@@ -21,14 +21,13 @@ def compute_variance(files_data, params_list, component_types, detrend_phase=Fal
     n_frequencies = len(freq_ref)
     n_params = len(params_list)
     
-    # Collect raw data
     raw_data_by_param = {param: [] for param in params_list}
     
     for file_data in files_data:
         for param in params_list:
             if '_mag' in param:
                 sparam_name = param.replace('_mag', '')
-                values = file_data['networks'][sparam_name][1]  # Get dB values
+                values = file_data['networks'][sparam_name][1]  
             else:  # phase
                 sparam_name = param.replace('_phase', '')
                 values = np.degrees(np.angle(file_data['networks'][sparam_name][1]))
@@ -37,7 +36,6 @@ def compute_variance(files_data, params_list, component_types, detrend_phase=Fal
             
             raw_data_by_param[param].append(values)
     
-    # Normalize data
     normalized_data = np.zeros((n_files, n_frequencies, n_params))
     
     for i, (param, comp_type) in enumerate(zip(params_list, component_types)):
@@ -45,11 +43,9 @@ def compute_variance(files_data, params_list, component_types, detrend_phase=Fal
         normalized = normalize_for_variance(param_data, is_phase=(comp_type == 'phase'), detrend=detrend_phase)
         normalized_data[:, :, i] = normalized
     
-    # Calculate variance
     variance_by_param = np.var(normalized_data, axis=0, ddof=1)
     total_variance = np.sum(variance_by_param, axis=1)
     
-    # Calculate contribution percentage
     variance_contribution = np.zeros_like(variance_by_param)
     for freq_idx in range(n_frequencies):
         if total_variance[freq_idx] > 1e-10:

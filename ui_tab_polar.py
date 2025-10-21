@@ -255,7 +255,7 @@ class TabPolar:
                 
                 if pol_type == "circular":
                     for plane in ["YZ", "ZX", "XY"]:
-                        for pol in ["RHCP", "LHCP"]:
+                        for pol in ["RHCP", "LHCP", "RL"]:
                             if data[plane].get(pol) is not None:
                                 var = tk.BooleanVar(value=True)
                                 self.combined_items.append({
@@ -438,9 +438,18 @@ class TabPolar:
         
         colors = plt.cm.tab10(np.linspace(0, 1, min(10, len(series_list))))
         
+        max_gain_db = min_db
+        max_gain_name = ""
+        
         for i, series in enumerate(series_list):
             self.ax.plot(series['theta'], series['r'], 
                         color=colors[i % len(colors)], lw=2, label=series['label'])
+            
+            peak_r = np.max(series['r'])
+            peak_db = peak_r + min_db
+            if peak_db > max_gain_db:
+                max_gain_db = peak_db
+                max_gain_name = series['label']
         
         self.ax.set_theta_zero_location("N")
         self.ax.set_theta_direction(-1)
@@ -457,7 +466,8 @@ class TabPolar:
         self.ax.grid(True, alpha=0.3)
         
         title = {"rms": "RMS/Circular", "theta_phi": "Theta/Phi", "combined": "Combined"}[mode]
-        self.ax.set_title(title, pad=12)
+        title_with_gain = f" Max gain: {max_gain_db:.2f} db"
+        self.ax.set_title(title_with_gain, pad=12, fontsize=10)
         
         if series_list:
             self.ax.legend(loc='upper left', bbox_to_anchor=(1.05, 1), fontsize=8)
