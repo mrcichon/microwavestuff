@@ -12,7 +12,7 @@ class TabRegex:
     def __init__(self, parent, fig, canvas,
                  legend_frame, legend_canvas,
                  get_files_func, get_freq_range_func,
-                 get_legend_on_plot_func):
+                 get_legend_on_plot_func, get_scale_mode_func):
         self.parent = parent
         self.fig = fig
         self.canvas = canvas
@@ -21,6 +21,7 @@ class TabRegex:
         self.get_files = get_files_func
         self.get_freq_range = get_freq_range_func
         self.get_legend_on_plot = get_legend_on_plot_func
+        self.get_scale_mode = get_scale_mode_func
         
         self.regex_pattern = tk.StringVar(value=r'_(\d+)ml')
         self.regex_group = tk.IntVar(value=1)
@@ -175,7 +176,8 @@ class TabRegex:
                         phase_deg = np.degrees(phase_rad)
                         s_data = (phase_deg + 180) % 360 - 180
                     else:
-                        s_data = raw_data.s_db.flatten()
+                        use_db = self.get_scale_mode()
+                        s_data = raw_data.s_db.flatten() if use_db else raw_data.s_mag.flatten()
                     
                     files_data.append((fname, value, freq, s_data, d))
                     
@@ -246,14 +248,14 @@ class TabRegex:
                     self.regex_spans.append(span)
         
         ax.set_xlabel("Frequency [Hz]")
-        ylabel = f"Phase {self.regex_param.get().upper()} [°]" if self.regex_phase.get() else f"|{self.regex_param.get().upper()}| [dB]"
+        ylabel = f"Phase {self.regex_param.get().upper()} [Â°]" if self.regex_phase.get() else f"|{self.regex_param.get().upper()}| [dB]"
         ax.set_ylabel(ylabel)
         
         title = f"Regex-based ordering: {self.regex_pattern.get()} (group {self.regex_group.get()})"
         if self.regex_phase.get():
-            title += " — Phase"
+            title += " â€” Phase"
         if self.regex_gate.get():
-            title += f" [Gated: {self.regex_gate_center.get()}±{self.regex_gate_span.get()/2}ns]"
+            title += f" [Gated: {self.regex_gate_center.get()}Â±{self.regex_gate_span.get()/2}ns]"
         ax.set_title(title)
         ax.grid(True)
         
@@ -288,7 +290,7 @@ class TabRegex:
             row = ttk.Frame(self.legend_frame)
             row.pack(fill=tk.X, padx=5, pady=2)
             
-            color_label = tk.Label(row, text="■ ", foreground=color, font=("", 12))
+            color_label = tk.Label(row, text="\u25a0 ", foreground=color, font=("", 12))
             color_label.pack(side=tk.LEFT, padx=(0, 5))
             
             display_name = name if len(name) <= 20 else name[:17] + "..."

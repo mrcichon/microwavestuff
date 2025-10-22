@@ -9,7 +9,7 @@ class TabFreq:
     def __init__(self, parent, fig, canvas,
                  legend_frame, legend_canvas,
                  get_files_func, get_freq_range_func,
-                 get_legend_on_plot_func):
+                 get_legend_on_plot_func, get_scale_mode_func):
         self.parent = parent
         self.fig = fig
         self.canvas = canvas
@@ -18,6 +18,7 @@ class TabFreq:
         self.get_files = get_files_func
         self.get_freq_range = get_freq_range_func
         self.get_legend_on_plot = get_legend_on_plot_func
+        self.get_scale_mode = get_scale_mode_func
         
         self.s11_var = tk.BooleanVar(value=False)
         self.s22_var = tk.BooleanVar(value=False)
@@ -107,7 +108,8 @@ class TabFreq:
             return
         
         fmin, fmax, sstr = self.get_freq_range()
-        files_data = extract_freq_data(self.get_files(), sstr, params)
+        use_db = self.get_scale_mode()
+        files_data = extract_freq_data(self.get_files(), sstr, params, use_db)
         
         if not files_data:
             ax = self.fig.add_subplot(111)
@@ -152,7 +154,8 @@ class TabFreq:
                     legend_items.append((name, line.get_color()))
                     seen_names.add(name)
             
-            ax.set_ylabel(f"|{param.upper()}| [dB]")
+            ylabel = f"|{param.upper()}| [dB]" if use_db else f"|{param.upper()}| [mag]"
+            ax.set_ylabel(ylabel)
             ax.set_title(f"{param.upper()} magnitude")
             ax.grid(True)
             
@@ -205,7 +208,7 @@ class TabFreq:
             row = ttk.Frame(self.legend_frame)
             row.pack(fill=tk.X, padx=5, pady=2)
             
-            color_label = tk.Label(row, text="■ ", foreground=color, font=("", 12))
+            color_label = tk.Label(row, text="\u25a0 ", foreground=color, font=("", 12))
             color_label.pack(side=tk.LEFT, padx=(0, 5))
             
             display_name = name if len(name) <= 20 else name[:17] + "..."
@@ -218,4 +221,5 @@ class TabFreq:
             return ""
         
         extrema_range = (self.extrema_range_min.get(), self.extrema_range_max.get())
-        return format_freq_text(self.last_extrema, extrema_range)
+        use_db = self.get_scale_mode()
+        return format_freq_text(self.last_extrema, extrema_range, use_db)

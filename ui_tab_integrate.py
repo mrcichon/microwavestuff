@@ -7,19 +7,19 @@ from analysis_integrate import compute_sparams, format_integration_text
 from sparams_io import loadFile
 
 class TabIntegrate:
-    def __init__(self, parent, fig, ax, canvas, get_files_func, get_freq_range_func):
+    def __init__(self, parent, fig, ax, canvas, get_files_func, get_freq_range_func, get_scale_mode_func):
         self.parent = parent
         self.fig = fig
         self.ax = ax
         self.canvas = canvas
         self.get_files = get_files_func
         self.get_freq_range = get_freq_range_func
+        self.get_scale_mode = get_scale_mode_func
         
         self.s11_var = tk.BooleanVar(value=True)
         self.s12_var = tk.BooleanVar(value=False)
         self.s21_var = tk.BooleanVar(value=True)
         self.s22_var = tk.BooleanVar(value=False)
-        self.scale_var = tk.StringVar(value="db")
         self.sort_var = tk.StringVar(value="name")
         self.asc_var = tk.BooleanVar(value=True)
         
@@ -39,17 +39,12 @@ class TabIntegrate:
         
         ttk.Separator(frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
-        ttk.Radiobutton(frame, text="dB", value="db", variable=self.scale_var, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Radiobutton(frame, text="Linear", value="linear", variable=self.scale_var, command=self.update).pack(side=tk.LEFT, padx=2)
-        
-        ttk.Separator(frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
-        
         ttk.Label(frame, text="Sort:").pack(side=tk.LEFT, padx=(0,5))
         ttk.Radiobutton(frame, text="Name", value="name", variable=self.sort_var, command=self.update).pack(side=tk.LEFT, padx=2)
         ttk.Radiobutton(frame, text="S11", value="s11", variable=self.sort_var, command=self.update).pack(side=tk.LEFT, padx=2)
         ttk.Radiobutton(frame, text="S21", value="s21", variable=self.sort_var, command=self.update).pack(side=tk.LEFT, padx=2)
         ttk.Radiobutton(frame, text="Total", value="total", variable=self.sort_var, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="↑", variable=self.asc_var, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(frame, text="â†‘", variable=self.asc_var, command=self.update).pack(side=tk.LEFT, padx=2)
         
         ttk.Button(frame, text="Export", command=self._export_txt).pack(side=tk.LEFT, padx=10)
         
@@ -88,10 +83,8 @@ class TabIntegrate:
                     try:
                         s_data = getattr(ntw, param)
                         freq = ntw.f
-                        if self.scale_var.get() == 'db':
-                            values = s_data.s_db.flatten()
-                        else:
-                            values = np.abs(s_data.s.flatten())
+                        use_db = self.get_scale_mode()
+                        values = s_data.s_db.flatten() if use_db else s_data.s_mag.flatten()
                         networks[param] = (freq, values)
                     except:
                         pass
@@ -130,10 +123,12 @@ class TabIntegrate:
             self.canvas.draw()
             return
         
+        use_db = self.get_scale_mode()
+        scale_type = 'db' if use_db else 'linear'
         result = compute_sparams(
             files_data,
             params,
-            self.scale_var.get(),
+            scale_type,
             self.sort_var.get(),
             self.asc_var.get()
         )
@@ -159,7 +154,7 @@ class TabIntegrate:
         self.ax.set_xlabel('Files')
         self.ax.set_ylabel('Integrated value')
         
-        sort_label = "name" if result['sort_by'] == "name" else f"{result['sort_by'].upper()} {'↑' if self.asc_var.get() else '↓'}"
+        sort_label = "name" if result['sort_by'] == "name" else f"{result['sort_by'].upper()} {'â†‘' if self.asc_var.get() else 'â†“'}"
         self.ax.set_title(f"Integration of S-parameters ({result['scale_type']} scale, sorted by {sort_label})")
         
         self.ax.set_xticks(x + width * (n_params - 1) / 2)

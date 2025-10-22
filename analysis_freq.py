@@ -1,7 +1,7 @@
 import numpy as np
 from pathlib import Path
 
-def extract_freq_data(files_list, freq_range_str, selected_params):
+def extract_freq_data(files_list, freq_range_str, selected_params, use_db=True):
     """
     Extract frequency domain data from file list.
     
@@ -9,6 +9,7 @@ def extract_freq_data(files_list, freq_range_str, selected_params):
         files_list: list of (BooleanVar, path, metadata_dict)
         freq_range_str: e.g. "0.4-4.0ghz"
         selected_params: list of str like ['s11', 's21']
+        use_db: bool, if True use dB scale, else linear magnitude
     
     Returns:
         list of dicts with keys:
@@ -48,7 +49,8 @@ def extract_freq_data(files_list, freq_range_str, selected_params):
                 
                 params_data = {}
                 for param in selected_params:
-                    arr = getattr(ntw, param).s_db.flatten()
+                    s_param = getattr(ntw, param)
+                    arr = s_param.s_db.flatten() if use_db else s_param.s_mag.flatten()
                     params_data[param] = arr
                 
                 result.append({
@@ -154,13 +156,14 @@ def find_extrema(files_data, selected_params, freq_range_ghz, find_minima=True, 
     return extrema
 
 
-def format_freq_text(extrema_list, freq_range_ghz):
+def format_freq_text(extrema_list, freq_range_ghz, use_db=True):
     """
     Format extrema data as text output.
     
     Args:
         extrema_list: list from find_extrema()
         freq_range_ghz: tuple (min_ghz, max_ghz)
+        use_db: bool, if True show dB units, else magnitude
     
     Returns:
         str: formatted text
@@ -168,6 +171,7 @@ def format_freq_text(extrema_list, freq_range_ghz):
     if not extrema_list:
         return ""
     
+    unit = "dB" if use_db else "mag"
     lines = []
     lines.append("=" * 40)
     lines.append(f"EXTREMA (Range: {freq_range_ghz[0]:.2f}-{freq_range_ghz[1]:.2f} GHz)")
@@ -176,6 +180,6 @@ def format_freq_text(extrema_list, freq_range_ghz):
     for ext in extrema_list:
         type_str = "MAX" if ext['type'] == 'max' else "MIN"
         freq_ghz = ext['freq'] / 1e9
-        lines.append(f"{type_str} | {ext['file']} | {ext['param'].upper()} | {freq_ghz:.4f} GHz | {ext['value']:.2f} dB")
+        lines.append(f"{type_str} | {ext['file']} | {ext['param'].upper()} | {freq_ghz:.4f} GHz | {ext['value']:.2f} {unit}")
     
     return "\n".join(lines)

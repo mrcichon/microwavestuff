@@ -63,6 +63,7 @@ class App(tk.Tk):
         
         self.legendVisible = tk.BooleanVar(value=True)
         self.legendOnPlot = tk.BooleanVar(value=False)
+        self.use_db_scale = tk.BooleanVar(value=True)
         
         self._makeUi()
         self._updAll()
@@ -84,13 +85,15 @@ class App(tk.Tk):
         self._validateNumeric(ent2, self.fmax, self._updAll)
         
         ttk.Button(lfrm, text="Dodaj pliki", command=self._addFiles).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="UsuÅ„ wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="UsuÅ„ zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="Usuń wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="Usuń zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Average files", command=self._avgFiles).pack(anchor="w", pady=(0,10))
         
         ttk.Checkbutton(lfrm, text="Show legend panel", variable=self.legendVisible,
                        command=self._toggleLegend).pack(anchor="w", pady=(0,10))
         ttk.Checkbutton(lfrm, text="Legend on plot", variable=self.legendOnPlot,
+                       command=self._updAll).pack(anchor="w", pady=(0,10))
+        ttk.Checkbutton(lfrm, text="dB scale", variable=self.use_db_scale,
                        command=self._updAll).pack(anchor="w", pady=(0,10))
         
         fileListFrame = ttk.Frame(lfrm)
@@ -192,7 +195,8 @@ class App(tk.Tk):
             legend_canvas=self.legendCanvasF,
             get_files_func=self.get_files,
             get_freq_range_func=self.get_freq_range,
-            get_legend_on_plot_func=lambda: self.legendOnPlot.get()
+            get_legend_on_plot_func=lambda: self.legendOnPlot.get(),
+            get_scale_mode_func=self.get_scale_mode
         )
         
         self.cvF.mpl_connect('button_press_event', self._onClick)
@@ -247,7 +251,8 @@ class App(tk.Tk):
             legend_canvas=self.legendCanvasT,
             get_files_func=self.get_files,
             get_freq_range_func=self.get_freq_range,
-            get_legend_on_plot_func=lambda: self.legendOnPlot.get()
+            get_legend_on_plot_func=lambda: self.legendOnPlot.get(),
+            get_scale_mode_func=self.get_scale_mode
         )
         
         self.cvT.mpl_connect('button_press_event', self._onClick)
@@ -301,7 +306,8 @@ class App(tk.Tk):
             legend_canvas=self.legendCanvasR,
             get_files_func=self.get_files,
             get_freq_range_func=self.get_freq_range,
-            get_legend_on_plot_func=lambda: self.legendOnPlot.get()
+            get_legend_on_plot_func=lambda: self.legendOnPlot.get(),
+            get_scale_mode_func=self.get_scale_mode
         )
         
     def _create_overlap_tab(self):
@@ -368,7 +374,8 @@ class App(tk.Tk):
             fig=self.figSC,
             canvas=self.cvSC,
             get_files_func=self.get_files,
-            get_freq_range_func=self.get_freq_range
+            get_freq_range_func=self.get_freq_range,
+            get_scale_mode_func=self.get_scale_mode
         )
     
     def _create_integrate_tab(self):
@@ -389,7 +396,8 @@ class App(tk.Tk):
             ax=self.axI,
             canvas=self.cvI,
             get_files_func=self.get_files,
-            get_freq_range_func=self.get_freq_range
+            get_freq_range_func=self.get_freq_range,
+            get_scale_mode_func=self.get_scale_mode
         )
     
     def _create_td_analysis_tab(self):
@@ -464,6 +472,9 @@ class App(tk.Tk):
         fmax = self.fmax.get()
         sstr = f"{fmin}-{fmax}ghz"
         return (fmin, fmax, sstr)
+    
+    def get_scale_mode(self):
+        return self.use_db_scale.get()
     
     def _addFiles(self):
         pth = filedialog.askopenfilenames(
@@ -989,7 +1000,7 @@ class App(tk.Tk):
         ttk.Label(dialog, text="Preview:").grid(row=5, column=0, padx=10, pady=(15,5), sticky="w")
         previewFrame = ttk.Frame(dialog, relief=tk.SUNKEN, borderwidth=2)
         previewFrame.grid(row=5, column=1, padx=10, pady=(15,5), sticky="ew")
-        previewLabel = tk.Label(previewFrame, text="â”â”â”â”â”â”â”â”â”", font=("", 14), background="white")
+        previewLabel = tk.Label(previewFrame, text="Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â", font=("", 14), background="white")
         previewLabel.pack(padx=20, pady=10)
         
         def updatePreview(*args):

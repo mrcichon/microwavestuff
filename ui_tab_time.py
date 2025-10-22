@@ -12,7 +12,7 @@ class TabTime:
     def __init__(self, parent, fig, canvas,
                  legend_frame, legend_canvas,
                  get_files_func, get_freq_range_func,
-                 get_legend_on_plot_func):
+                 get_legend_on_plot_func, get_scale_mode_func):
         self.parent = parent
         self.fig = fig
         self.canvas = canvas
@@ -22,6 +22,7 @@ class TabTime:
         self.get_files = get_files_func
         self.get_freq_range = get_freq_range_func
         self.get_legend_on_plot = get_legend_on_plot_func
+        self.get_scale_mode = get_scale_mode_func
         
         self.td_param_var = tk.StringVar(value="s11")
         self.gate_chk_var = tk.BooleanVar(value=False)
@@ -83,8 +84,9 @@ class TabTime:
         
         fmin, fmax, sstr = self.get_freq_range()
         td_param = self.td_param_var.get()
+        use_db = self.get_scale_mode()
         
-        raw_data = extract_time_data(self.get_files(), sstr, td_param)
+        raw_data = extract_time_data(self.get_files(), sstr, td_param, use_db)
         
         if not raw_data:
             ax = self.fig.add_subplot(111)
@@ -100,7 +102,7 @@ class TabTime:
         if self.gate_chk_var.get():
             gated_data = apply_time_gate(raw_data, td_param,
                                         self.gate_center_var.get(),
-                                        self.gate_span_var.get())
+                                        self.gate_span_var.get(), use_db)
         
         extrema = []
         if self.extrema_enabled.get():
@@ -130,6 +132,8 @@ class TabTime:
         axF, axTR, axTG = axes
         
         prm = self.last_result['param'].upper()
+        use_db = self.get_scale_mode()
+        unit = "dB" if use_db else "mag"
         legend_items = []
         seen_labels = set()
         
@@ -147,11 +151,11 @@ class TabTime:
                 legend_items.append((data['name'], line.get_color()))
                 seen_labels.add(data['name'])
         
-        axF.set_ylabel(f"|{prm}| [dB]")
+        axF.set_ylabel(f"|{prm}| [{unit}]")
         axF.set_title(f"{prm} (frequency domain - raw)")
         axF.grid(True)
         
-        axTR.set_ylabel(f"{prm} TD [dB]")
+        axTR.set_ylabel(f"{prm} TD [{unit}]")
         axTR.set_xlabel("Time [ns]")
         axTR.set_title(f"{prm} (time domain - raw)")
         axTR.grid(True)
@@ -166,7 +170,7 @@ class TabTime:
                     kwargs['linewidth'] = data['linewidth']
                 axTG.plot(data['freq'], data['gated_data'], **kwargs)
         
-        axTG.set_ylabel(f"{prm} [dB]")
+        axTG.set_ylabel(f"{prm} [{unit}]")
         axTG.set_xlabel("Frequency [Hz]")
         axTG.set_title(f"{prm} (frequency domain - gated)")
         axTG.grid(True)
@@ -211,7 +215,7 @@ class TabTime:
             row = ttk.Frame(self.legend_frame)
             row.pack(fill=tk.X, padx=5, pady=2)
             
-            color_label = tk.Label(row, text="■ ", foreground=color, font=("", 12))
+            color_label = tk.Label(row, text="\u25a0 ", foreground=color, font=("", 12))
             color_label.pack(side=tk.LEFT, padx=(0, 5))
             
             display_name = name if len(name) <= 20 else name[:17] + "..."
@@ -236,7 +240,8 @@ class TabTime:
         
         if self.last_result['extrema']:
             extrema_range = (self.extrema_range_min.get(), self.extrema_range_max.get())
-            extrema_text = format_time_text(self.last_result['extrema'], extrema_range)
+            use_db = self.get_scale_mode()
+            extrema_text = format_time_text(self.last_result['extrema'], extrema_range, use_db)
             if extrema_text:
                 lines.append("")
                 lines.append(extrema_text)

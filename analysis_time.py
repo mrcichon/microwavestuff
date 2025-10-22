@@ -1,7 +1,7 @@
 import numpy as np
 from pathlib import Path
 
-def extract_time_data(files_list, freq_range_str, selected_param):
+def extract_time_data(files_list, freq_range_str, selected_param, use_db=True):
     """
     Extract time domain data for single S-parameter.
     
@@ -9,15 +9,16 @@ def extract_time_data(files_list, freq_range_str, selected_param):
         files_list: list of (BooleanVar, path, metadata_dict)
         freq_range_str: e.g. "0.4-4.0ghz"
         selected_param: str like 's11' or 's21'
+        use_db: bool, if True use dB scale, else linear magnitude
     
     Returns:
         list of dicts with keys:
             'name': str
             'path': str
             'freq': ndarray (Hz)
-            'freq_data': ndarray (dB values in freq domain)
+            'freq_data': ndarray (dB/mag values in freq domain)
             't_ns': ndarray (time in ns)
-            'time_data': ndarray (dB values in time domain)
+            'time_data': ndarray (dB/mag values in time domain)
             'network': rf.Network (for gating)
             'color': str or None
             'linewidth': float
@@ -53,9 +54,9 @@ def extract_time_data(files_list, freq_range_str, selected_param):
             
             s_param = getattr(ntw, selected_param)
             
-            freq_data = s_param.s_db.flatten()
+            freq_data = s_param.s_db.flatten() if use_db else s_param.s_mag.flatten()
             t_ns = s_param.frequency.t_ns
-            time_data = s_param.s_time_db.flatten()
+            time_data = s_param.s_time_db.flatten() if use_db else s_param.s_time_mag.flatten()
             
             result.append({
                 'name': fname,
@@ -75,7 +76,7 @@ def extract_time_data(files_list, freq_range_str, selected_param):
     return result
 
 
-def apply_time_gate(files_data, selected_param, center_ns, span_ns):
+def apply_time_gate(files_data, selected_param, center_ns, span_ns, use_db=True):
     """
     Apply time gating to frequency domain data.
     
@@ -84,12 +85,13 @@ def apply_time_gate(files_data, selected_param, center_ns, span_ns):
         selected_param: str like 's11'
         center_ns: float, gate center in ns
         span_ns: float, gate span in ns
+        use_db: bool, if True use dB scale, else linear magnitude
     
     Returns:
         list of dicts with keys:
             'name': str
             'freq': ndarray
-            'gated_data': ndarray (dB values after gating)
+            'gated_data': ndarray (dB/mag values after gating)
             'color': str or None
             'linewidth': float
     """
@@ -101,7 +103,7 @@ def apply_time_gate(files_data, selected_param, center_ns, span_ns):
             s_param = getattr(ntw, selected_param)
             
             s_gated = s_param.time_gate(center=center_ns, span=span_ns)
-            gated_data = s_gated.s_db.flatten()
+            gated_data = s_gated.s_db.flatten() if use_db else s_gated.s_mag.flatten()
             
             result.append({
                 'name': file_entry['name'],
@@ -237,13 +239,14 @@ def find_gated_extrema(gated_data, freq_range_ghz, selected_param,
     return extrema
 
 
-def format_time_text(extrema_list, freq_range_ghz):
+def format_time_text(extrema_list, freq_range_ghz, use_db=True):
     """
     Format time domain extrema as text.
     
     Args:
         extrema_list: combined list from find_time_extrema and find_gated_extrema
         freq_range_ghz: tuple (min_ghz, max_ghz)
+        use_db: bool, if True show dB units, else magnitude
     
     Returns:
         str: formatted text
@@ -251,6 +254,7 @@ def format_time_text(extrema_list, freq_range_ghz):
     if not extrema_list:
         return ""
     
+    unit = "dB" if use_db else "mag"
     lines = []
     lines.append("=" * 40)
     lines.append(f"EXTREMA (Range: {freq_range_ghz[0]:.2f}-{freq_range_ghz[1]:.2f} GHz)")
@@ -263,6 +267,6 @@ def format_time_text(extrema_list, freq_range_ghz):
         freq_ghz = ext['freq'] / 1e9
         domain_str = "raw" if ext['domain'] == 'freq_raw' else "gated"
         param_str = f"{ext['param'].upper()}_{domain_str}"
-        lines.append(f"{type_str} | {ext['file']} | {param_str} | {freq_ghz:.4f} GHz | {ext['value']:.2f} dB")
+        lines.append(f"{type_str} | {ext['file']} | {param_str} | {freq_ghz:.4f} GHz | {ext['value']:.2f} {unit}")
     
     return "\n".join(lines)
