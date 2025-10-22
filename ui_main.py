@@ -84,8 +84,8 @@ class App(tk.Tk):
         self._validateNumeric(ent2, self.fmax, self._updAll)
         
         ttk.Button(lfrm, text="Dodaj pliki", command=self._addFiles).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="Usuń wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="Usuń zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="UsuÅ„ wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="UsuÅ„ zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Average files", command=self._avgFiles).pack(anchor="w", pady=(0,10))
         
         ttk.Checkbutton(lfrm, text="Show legend panel", variable=self.legendVisible,
@@ -937,6 +937,8 @@ class App(tk.Tk):
         menu = tk.Menu(self, tearoff=0)
         menu.add_command(label="Edit line style...", 
                         command=lambda: self._editLineStyle(filepath, file_data))
+        menu.add_command(label="Delete", 
+                        command=lambda: self._deleteLine(filepath))
         menu.post(event.x_root, event.y_root)
     
     def _editLineStyle(self, filepath, file_data):
@@ -987,7 +989,7 @@ class App(tk.Tk):
         ttk.Label(dialog, text="Preview:").grid(row=5, column=0, padx=10, pady=(15,5), sticky="w")
         previewFrame = ttk.Frame(dialog, relief=tk.SUNKEN, borderwidth=2)
         previewFrame.grid(row=5, column=1, padx=10, pady=(15,5), sticky="ew")
-        previewLabel = tk.Label(previewFrame, text="━━━━━━━━━", font=("", 14), background="white")
+        previewLabel = tk.Label(previewFrame, text="â”â”â”â”â”â”â”â”â”", font=("", 14), background="white")
         previewLabel.pack(padx=20, pady=10)
         
         def updatePreview(*args):
@@ -1034,6 +1036,25 @@ class App(tk.Tk):
         x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
         y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
         dialog.geometry(f"+{x}+{y}")
+    
+    def _deleteLine(self, filepath):
+        self.fls = [(v, p, d) for v, p, d in self.fls if p != filepath]
+        
+        for widget in self.fbox.winfo_children():
+            widget.destroy()
+        
+        for v, p, d in self.fls:
+            v.set(True)
+            if d.get('is_average', False):
+                name = d.get('custom_name', 'average')
+                chk = tk.Checkbutton(self.fbox, text=f"[AVG] {name}", variable=v, 
+                                   command=self._updAll, fg="blue", activeforeground="blue")
+            else:
+                chk = tk.Checkbutton(self.fbox, text=Path(p).name, variable=v, command=self._updAll)
+            chk.pack(anchor="w")
+            chk.bind("<Button-3>", lambda e, path=p: self._showStyleMenu(e, path))
+        
+        self._updAll()
     
     def _validateNumeric(self, widget, var, callback=None):
         def validate_and_update(*args):
