@@ -9,11 +9,12 @@ import re
 from analysis_regex import extract_regex_value, analyze_ordered_ranges, format_regex_text
 
 class TabRegex:
-    def __init__(self, parent, fig, canvas,
+    def __init__(self, parent, control_frame, fig, canvas,
                  legend_frame, legend_canvas,
                  get_files_func, get_freq_range_func,
                  get_legend_on_plot_func, get_scale_mode_func):
         self.parent = parent
+        self.control_frame = control_frame
         self.fig = fig
         self.canvas = canvas
         self.legend_frame = legend_frame
@@ -44,8 +45,9 @@ class TabRegex:
         self._build_ui()
     
     def _build_ui(self):
-        frame = ttk.Frame(self.parent)
-        frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
+        
+        frame = ttk.Frame(self.control_frame)
+        frame.pack(side=tk.TOP, fill=tk.X, pady=2)
         
         ttk.Label(frame, text="Pattern:").pack(side=tk.LEFT, padx=(0,5))
         self.regex_entry = ttk.Entry(frame, textvariable=self.regex_pattern, width=20)
@@ -88,8 +90,8 @@ class TabRegex:
         
         ttk.Button(frame, text="Export", command=self._export_ranges).pack(side=tk.LEFT, padx=10)
         
-        frame2 = ttk.Frame(self.parent)
-        frame2.pack(side=tk.TOP, fill=tk.X, padx=10, pady=2)
+        frame2 = ttk.Frame(self.control_frame)
+        frame2.pack(side=tk.TOP, fill=tk.X, pady=2)
         
         ttk.Checkbutton(frame2, text="Small diffs",
                        variable=self.regex_small_diff, command=self.update).pack(side=tk.LEFT, padx=2)
@@ -113,7 +115,7 @@ class TabRegex:
         ttk.Button(frame2, text="XXcm", width=6,
                   command=lambda: self._set_pattern(r'(\d+)cm')).pack(side=tk.LEFT, padx=2)
         
-        self.control_panel = frame
+        
 
     def _on_regex_change(self, event=None):
         pattern = self.regex_pattern.get()
@@ -248,14 +250,14 @@ class TabRegex:
                     self.regex_spans.append(span)
         
         ax.set_xlabel("Frequency [Hz]")
-        ylabel = f"Phase {self.regex_param.get().upper()} [Â°]" if self.regex_phase.get() else f"|{self.regex_param.get().upper()}| [dB]"
+        ylabel = f"Phase {self.regex_param.get().upper()} [Ã‚Â°]" if self.regex_phase.get() else f"|{self.regex_param.get().upper()}| [dB]"
         ax.set_ylabel(ylabel)
         
         title = f"Regex-based ordering: {self.regex_pattern.get()} (group {self.regex_group.get()})"
         if self.regex_phase.get():
-            title += " â€” Phase"
+            title += " Ã¢â‚¬â€ Phase"
         if self.regex_gate.get():
-            title += f" [Gated: {self.regex_gate_center.get()}Â±{self.regex_gate_span.get()/2}ns]"
+            title += f" [Gated: {self.regex_gate_center.get()}Ã‚Â±{self.regex_gate_span.get()/2}ns]"
         ax.set_title(title)
         ax.grid(True)
         

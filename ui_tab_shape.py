@@ -7,9 +7,10 @@ from pathlib import Path
 from analysis_shape import compute_shape_matrix, format_shape_text
 
 class TabShapeComparison:
-    def __init__(self, parent, fig, canvas,
+    def __init__(self, parent, control_frame, fig, canvas,
                  get_files_func, get_freq_range_func, get_scale_mode_func):
         self.parent = parent
+        self.control_frame = control_frame
         self.fig = fig
         self.canvas = canvas
         self.ax = None
@@ -35,9 +36,9 @@ class TabShapeComparison:
         self._build_ui()
     
     def _build_ui(self):
-        # Main control bar
-        frame = ttk.Frame(self.parent)
-        frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
+        
+        frame = ttk.Frame(self.control_frame)
+        frame.pack(side=tk.TOP, fill=tk.X, pady=2)
         
         ttk.Label(frame, text="Param:").pack(side=tk.LEFT, padx=(0,5))
         for n in ("s11", "s12", "s21", "s22"):
@@ -63,23 +64,22 @@ class TabShapeComparison:
         
         ttk.Button(frame, text="Export", command=self._export_matrix).pack(side=tk.LEFT, padx=10)
         
-        # Adaptive parameters on second row (shown/hidden dynamically)
-        self.adapt_frame = ttk.Frame(self.parent)
-        self.adapt_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=2)
-        self.adapt_frame.pack_forget()  # Initially hidden
+        self.adapt_frame = ttk.Frame(self.control_frame)
+        self.adapt_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
+        self.adapt_frame.pack_forget()
         
         ttk.Label(self.adapt_frame, text="Adaptive:").pack(side=tk.LEFT, padx=(0,5))
-        ttk.Label(self.adapt_frame, text="Î±:").pack(side=tk.LEFT)
+        ttk.Label(self.adapt_frame, text="ÃŽÂ±:").pack(side=tk.LEFT)
         ttk.Spinbox(self.adapt_frame, from_=1.0, to=4.0, increment=0.5,
                    textvariable=self.shape_alpha, width=5,
                    command=self.update).pack(side=tk.LEFT, padx=2)
         
-        ttk.Label(self.adapt_frame, text="Ïƒ:").pack(side=tk.LEFT, padx=(10,2))
+        ttk.Label(self.adapt_frame, text="ÃÆ’:").pack(side=tk.LEFT, padx=(10,2))
         ttk.Spinbox(self.adapt_frame, from_=2, to=20,
                    textvariable=self.shape_sigma, width=5,
                    command=self.update).pack(side=tk.LEFT, padx=2)
         
-        ttk.Label(self.adapt_frame, text="Î³:").pack(side=tk.LEFT, padx=(10,2))
+        ttk.Label(self.adapt_frame, text="ÃŽÂ³:").pack(side=tk.LEFT, padx=(10,2))
         ttk.Spinbox(self.adapt_frame, from_=0.5, to=4.0, increment=0.5,
                    textvariable=self.shape_gamma, width=5,
                    command=self.update).pack(side=tk.LEFT, padx=2)
@@ -99,7 +99,7 @@ class TabShapeComparison:
                        variable=self.shape_show_activity,
                        command=self.update).pack(side=tk.LEFT, padx=(10,2))
         
-        self.control_panel = frame
+        
 
 
 
@@ -256,7 +256,7 @@ class TabShapeComparison:
         
         metric_names = {"xcorr": "Cross-Correlation", "l1": "L1 Distance", "l2": "L2 Distance",
                        "al1": "Adaptive L1", "al2": "Adaptive L2"}
-        title = f"{metric_names.get(self.shape_metric.get(), self.shape_metric.get())} â€” {self.shape_param.get().upper()}"
+        title = f"{metric_names.get(self.shape_metric.get(), self.shape_metric.get())} Ã¢â‚¬â€ {self.shape_param.get().upper()}"
         if self.shape_normalize.get():
             title += " (Normalized)"
         self.ax.set_title(title)

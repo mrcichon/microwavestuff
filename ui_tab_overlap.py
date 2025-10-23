@@ -8,9 +8,10 @@ from itertools import cycle
 from analysis_overlap import parse_frequency_file, find_overlaps, format_overlap_text
 
 class TabOverlap:
-    def __init__(self, parent, fig, ax, canvas,
+    def __init__(self, parent, control_frame, fig, ax, canvas,
                  get_files_func, get_freq_range_func, get_regex_tab_func):
         self.parent = parent
+        self.control_frame = control_frame
         self.fig = fig
         self.ax = ax
         self.canvas = canvas
@@ -24,18 +25,16 @@ class TabOverlap:
         self._build_ui()
         
     def _build_ui(self):
-        frame = ttk.Frame(self.parent)
-        frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
         
-        ttk.Label(frame, text="Frequency Range Analysis:").pack(side=tk.LEFT, padx=(0,10))
+        ttk.Label(self.control_frame, text="Frequency Range Analysis:").pack(side=tk.LEFT, padx=(0,10))
         
-        ttk.Button(frame, text="Load range files",
+        ttk.Button(self.control_frame, text="Load range files",
                   command=self._load_range_files).pack(side=tk.LEFT, padx=2)
-        ttk.Button(frame, text="Analyze from regex",
+        ttk.Button(self.control_frame, text="Analyze from regex",
                   command=self._analyze_from_regex).pack(side=tk.LEFT, padx=2)
-        ttk.Button(frame, text="Export overlaps",
+        ttk.Button(self.control_frame, text="Export overlaps",
                   command=self._export_overlaps).pack(side=tk.LEFT, padx=2)
-        ttk.Button(frame, text="Clear plot",
+        ttk.Button(self.control_frame, text="Clear plot",
                   command=self._clear_plot).pack(side=tk.LEFT, padx=2)
         
         info_frame = ttk.LabelFrame(self.parent, text="Loaded Data")
@@ -45,7 +44,7 @@ class TabOverlap:
         self.info_text.pack(fill="both", expand=True, padx=5, pady=5)
         self.info_text.config(state=tk.DISABLED)
         
-        self.control_panel = frame
+        
 
     def _load_range_files(self):
         files = filedialog.askopenfilenames(

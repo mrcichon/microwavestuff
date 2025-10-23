@@ -9,8 +9,9 @@ from analysis_polar import extract_theta_phi_series, prepare_polar_series
 from sparams_io import parse_polar_rms, parse_polar_pustelnik, parse_theta_phi_file
 
 class TabPolar:
-    def __init__(self, parent, fig, ax, canvas):
+    def __init__(self, parent, control_frame, fig, ax, canvas):
         self.parent = parent
+        self.control_frame = control_frame
         self.fig = fig
         self.ax = ax
         self.canvas = canvas
@@ -30,8 +31,9 @@ class TabPolar:
         self._build_ui()
     
     def _build_ui(self):
-        control_bar = ttk.Frame(self.parent)
-        control_bar.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
+        
+        control_bar = ttk.Frame(self.control_frame)
+        control_bar.pack(side=tk.TOP, fill=tk.X, pady=2)
         
         ttk.Label(control_bar, text="Mode:").pack(side=tk.LEFT, padx=(0,5))
         ttk.Radiobutton(control_bar, text="RMS/Circular", value="rms",
@@ -53,8 +55,8 @@ class TabPolar:
         
         ttk.Button(control_bar, text="Update", command=self.update).pack(side=tk.LEFT, padx=10)
         
-        second_bar = ttk.Frame(self.parent)
-        second_bar.pack(side=tk.TOP, fill=tk.X, padx=10, pady=(0,5))
+        second_bar = ttk.Frame(self.control_frame)
+        second_bar.pack(side=tk.TOP, fill=tk.X, pady=2)
         
         self.mode_bars = {}
         self.mode_bars["rms"] = self._build_rms_bar(second_bar)

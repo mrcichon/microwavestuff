@@ -9,11 +9,12 @@ import matplotlib.colors
 from analysis_time import extract_time_data, apply_time_gate, find_time_extrema, find_gated_extrema, format_time_text
 
 class TabTime:
-    def __init__(self, parent, fig, canvas,
+    def __init__(self, parent, control_frame, fig, canvas,
                  legend_frame, legend_canvas,
                  get_files_func, get_freq_range_func,
                  get_legend_on_plot_func, get_scale_mode_func):
         self.parent = parent
+        self.control_frame = control_frame
         self.fig = fig
         self.canvas = canvas
         self.legend_frame = legend_frame
@@ -41,42 +42,40 @@ class TabTime:
         self._build_ui()
         
     def _build_ui(self):
-        frame = ttk.Frame(self.parent)
-        frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
         
-        ttk.Label(frame, text="TDG:").pack(side=tk.LEFT, padx=(0,5))
+        ttk.Label(self.control_frame, text="TDG:").pack(side=tk.LEFT, padx=(0,5))
         for n in ("s11", "s12", "s21", "s22"):
-            ttk.Radiobutton(frame, text=n.upper(), value=n, 
+            ttk.Radiobutton(self.control_frame, text=n.upper(), value=n, 
                            variable=self.td_param_var, command=self.update).pack(side=tk.LEFT, padx=2)
         
-        ttk.Separator(frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Separator(self.control_frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
-        ttk.Checkbutton(frame, text="Gating", variable=self.gate_chk_var, 
+        ttk.Checkbutton(self.control_frame, text="Gating", variable=self.gate_chk_var, 
                        command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame, text="Center[ns]").pack(side=tk.LEFT, padx=(5,2))
-        ttk.Entry(frame, textvariable=self.gate_center_var, 
+        ttk.Label(self.control_frame, text="Center[ns]").pack(side=tk.LEFT, padx=(5,2))
+        ttk.Entry(self.control_frame, textvariable=self.gate_center_var, 
                  width=5).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame, text="Span[ns]").pack(side=tk.LEFT, padx=(5,2))
-        ttk.Entry(frame, textvariable=self.gate_span_var, 
+        ttk.Label(self.control_frame, text="Span[ns]").pack(side=tk.LEFT, padx=(5,2))
+        ttk.Entry(self.control_frame, textvariable=self.gate_span_var, 
                  width=5).pack(side=tk.LEFT, padx=2)
         
-        ttk.Separator(frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Separator(self.control_frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
-        ttk.Checkbutton(frame, text="Extrema", 
+        ttk.Checkbutton(self.control_frame, text="Extrema", 
                        variable=self.extrema_enabled,
                        command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="Min", variable=self.extrema_minima,
+        ttk.Checkbutton(self.control_frame, text="Min", variable=self.extrema_minima,
                        command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="Max", variable=self.extrema_maxima,
+        ttk.Checkbutton(self.control_frame, text="Max", variable=self.extrema_maxima,
                        command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Entry(frame, textvariable=self.extrema_range_min, 
+        ttk.Entry(self.control_frame, textvariable=self.extrema_range_min, 
                  width=4).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame, text="-").pack(side=tk.LEFT)
-        ttk.Entry(frame, textvariable=self.extrema_range_max,
+        ttk.Label(self.control_frame, text="-").pack(side=tk.LEFT)
+        ttk.Entry(self.control_frame, textvariable=self.extrema_range_max,
                  width=4).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame, text="GHz").pack(side=tk.LEFT, padx=(0,5))
+        ttk.Label(self.control_frame, text="GHz").pack(side=tk.LEFT, padx=(0,5))
         
-        self.control_panel = frame
+        
 
 
     def update(self):

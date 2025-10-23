@@ -6,9 +6,10 @@ from pathlib import Path
 from analysis_td_peaks import find_td_peaks, format_td_analysis_text
 
 class TabTDAnalysis:
-    def __init__(self, parent, fig, canvas,
+    def __init__(self, parent, control_frame, fig, canvas,
                  get_files_func, get_freq_range_func):
         self.parent = parent
+        self.control_frame = control_frame
         self.fig = fig
         self.canvas = canvas
         self.ax1 = None
@@ -26,26 +27,24 @@ class TabTDAnalysis:
         self._build_ui()
         
     def _build_ui(self):
-        frame = ttk.Frame(self.parent)
-        frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
         
-        ttk.Label(frame, text="Time limit [ns]:").pack(side=tk.LEFT, padx=(0,5))
-        ttk.Entry(frame, textvariable=self.td_time_limit,
+        ttk.Label(self.control_frame, text="Time limit [ns]:").pack(side=tk.LEFT, padx=(0,5))
+        ttk.Entry(self.control_frame, textvariable=self.td_time_limit,
                  width=6).pack(side=tk.LEFT, padx=2)
         
-        ttk.Checkbutton(frame, text="Mark peaks",
+        ttk.Checkbutton(self.control_frame, text="Mark peaks",
                        variable=self.td_mark_peaks,
                        command=self.update).pack(side=tk.LEFT, padx=10)
         
-        ttk.Button(frame, text="Export Analysis",
+        ttk.Button(self.control_frame, text="Export Analysis",
                   command=self._export_analysis).pack(side=tk.LEFT, padx=10)
-        ttk.Button(frame, text="Clear Markers",
+        ttk.Button(self.control_frame, text="Clear Markers",
                   command=self._clear_markers).pack(side=tk.LEFT, padx=2)
         
-        ttk.Label(frame, text="Checks: t_max(S11) ≈ 2×t_max(S21)",
+        ttk.Label(self.control_frame, text="Checks: t_max(S11) ≈ 2×t_max(S21)",
                  font=("", 8), foreground="gray").pack(side=tk.LEFT, padx=10)
         
-        self.control_panel = frame
+        
 
 
     def _get_files_data(self):

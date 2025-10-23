@@ -6,9 +6,10 @@ from pathlib import Path
 from analysis_variance import compute_variance, format_variance_text
 
 class TabVariance:
-    def __init__(self, parent, fig, ax, canvas,
+    def __init__(self, parent, control_frame, fig, ax, canvas,
                  get_files_func, get_freq_range_func):
         self.parent = parent
+        self.control_frame = control_frame
         self.fig = fig
         self.ax = ax
         self.canvas = canvas
@@ -30,37 +31,35 @@ class TabVariance:
         self._build_ui()
         
     def _build_ui(self):
-        frame = ttk.Frame(self.parent)
-        frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
         
-        ttk.Label(frame, text="Params:").pack(side=tk.LEFT, padx=(0,5))
-        ttk.Checkbutton(frame, text="S11", variable=self.var_s11,
+        ttk.Label(self.control_frame, text="Params:").pack(side=tk.LEFT, padx=(0,5))
+        ttk.Checkbutton(self.control_frame, text="S11", variable=self.var_s11,
                        command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="S12", variable=self.var_s12,
+        ttk.Checkbutton(self.control_frame, text="S12", variable=self.var_s12,
                        command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="S21", variable=self.var_s21,
+        ttk.Checkbutton(self.control_frame, text="S21", variable=self.var_s21,
                        command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="S22", variable=self.var_s22,
+        ttk.Checkbutton(self.control_frame, text="S22", variable=self.var_s22,
                        command=self.update).pack(side=tk.LEFT, padx=2)
         
-        ttk.Separator(frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Separator(self.control_frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
-        ttk.Checkbutton(frame, text="Magnitude", variable=self.var_mag,
+        ttk.Checkbutton(self.control_frame, text="Magnitude", variable=self.var_mag,
                        command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="Phase", variable=self.var_phase,
+        ttk.Checkbutton(self.control_frame, text="Phase", variable=self.var_phase,
                        command=self.update).pack(side=tk.LEFT, padx=2)
         
-        ttk.Separator(frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Separator(self.control_frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
-        ttk.Checkbutton(frame, text="Detrend phase",
+        ttk.Checkbutton(self.control_frame, text="Detrend phase",
                        variable=self.var_detrend, command=self.update).pack(side=tk.LEFT, padx=2)
         
-        ttk.Button(frame, text="Clear markers",
+        ttk.Button(self.control_frame, text="Clear markers",
                   command=self._clear_markers).pack(side=tk.LEFT, padx=10)
-        ttk.Button(frame, text="Export",
+        ttk.Button(self.control_frame, text="Export",
                   command=self._export_variance).pack(side=tk.LEFT, padx=2)
         
-        self.control_panel = frame
+        
 
 
     def _get_files_data(self):

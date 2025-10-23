@@ -7,8 +7,9 @@ from analysis_integrate import compute_sparams, format_integration_text
 from sparams_io import loadFile
 
 class TabIntegrate:
-    def __init__(self, parent, fig, ax, canvas, get_files_func, get_freq_range_func, get_scale_mode_func):
+    def __init__(self, parent, control_frame, fig, ax, canvas, get_files_func, get_freq_range_func, get_scale_mode_func):
         self.parent = parent
+        self.control_frame = control_frame
         self.fig = fig
         self.ax = ax
         self.canvas = canvas
@@ -28,27 +29,25 @@ class TabIntegrate:
         self._build_ui()
         
     def _build_ui(self):
-        frame = ttk.Frame(self.parent)
-        frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
         
-        ttk.Label(frame, text="Integrate:").pack(side=tk.LEFT, padx=(0,5))
-        ttk.Checkbutton(frame, text="S11", variable=self.s11_var, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="S12", variable=self.s12_var, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="S21", variable=self.s21_var, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="S22", variable=self.s22_var, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Label(self.control_frame, text="Integrate:").pack(side=tk.LEFT, padx=(0,5))
+        ttk.Checkbutton(self.control_frame, text="S11", variable=self.s11_var, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(self.control_frame, text="S12", variable=self.s12_var, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(self.control_frame, text="S21", variable=self.s21_var, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(self.control_frame, text="S22", variable=self.s22_var, command=self.update).pack(side=tk.LEFT, padx=2)
         
-        ttk.Separator(frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Separator(self.control_frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
-        ttk.Label(frame, text="Sort:").pack(side=tk.LEFT, padx=(0,5))
-        ttk.Radiobutton(frame, text="Name", value="name", variable=self.sort_var, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Radiobutton(frame, text="S11", value="s11", variable=self.sort_var, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Radiobutton(frame, text="S21", value="s21", variable=self.sort_var, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Radiobutton(frame, text="Total", value="total", variable=self.sort_var, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="â†‘", variable=self.asc_var, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Label(self.control_frame, text="Sort:").pack(side=tk.LEFT, padx=(0,5))
+        ttk.Radiobutton(self.control_frame, text="Name", value="name", variable=self.sort_var, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(self.control_frame, text="S11", value="s11", variable=self.sort_var, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(self.control_frame, text="S21", value="s21", variable=self.sort_var, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(self.control_frame, text="Total", value="total", variable=self.sort_var, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(self.control_frame, text="↑", variable=self.asc_var, command=self.update).pack(side=tk.LEFT, padx=2)
         
-        ttk.Button(frame, text="Export", command=self._export_txt).pack(side=tk.LEFT, padx=10)
+        ttk.Button(self.control_frame, text="Export", command=self._export_txt).pack(side=tk.LEFT, padx=10)
         
-        self.control_panel = frame    
+            
 
     def _get_files_data(self):
         fmin, fmax, sstr = self.get_freq_range()
@@ -154,7 +153,7 @@ class TabIntegrate:
         self.ax.set_xlabel('Files')
         self.ax.set_ylabel('Integrated value')
         
-        sort_label = "name" if result['sort_by'] == "name" else f"{result['sort_by'].upper()} {'â†‘' if self.asc_var.get() else 'â†“'}"
+        sort_label = "name" if result['sort_by'] == "name" else f"{result['sort_by'].upper()} {'Ã¢â€ â€˜' if self.asc_var.get() else 'Ã¢â€ â€œ'}"
         self.ax.set_title(f"Integration of S-parameters ({result['scale_type']} scale, sorted by {sort_label})")
         
         self.ax.set_xticks(x + width * (n_params - 1) / 2)

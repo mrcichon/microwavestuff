@@ -6,11 +6,12 @@ import matplotlib.pyplot as plt
 from analysis_freq import extract_freq_data, find_extrema, format_freq_text
 
 class TabFreq:
-    def __init__(self, parent, fig, canvas,
+    def __init__(self, parent, control_frame, fig, canvas,
                  legend_frame, legend_canvas,
                  get_files_func, get_freq_range_func,
                  get_legend_on_plot_func, get_scale_mode_func):
         self.parent = parent
+        self.control_frame = control_frame
         self.fig = fig
         self.canvas = canvas
         self.legend_frame = legend_frame
@@ -37,53 +38,27 @@ class TabFreq:
         self._build_ui()
         
     def _build_ui(self):
-        frame = ttk.Frame(self.parent)
-        frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
-        
-        ttk.Label(frame, text="Show:").pack(side=tk.LEFT, padx=(0,5))
+        ttk.Label(self.control_frame, text="Show:").pack(side=tk.LEFT, padx=(0,5))
         for name, var in [("S11", self.s11_var), ("S22", self.s22_var),
                           ("S12", self.s12_var), ("S21", self.s21_var)]:
-            ttk.Checkbutton(frame, text=name, variable=var, 
+            ttk.Checkbutton(self.control_frame, text=name, variable=var, 
                           command=self.update).pack(side=tk.LEFT, padx=2)
         
-        ttk.Separator(frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Separator(self.control_frame, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
-        ttk.Checkbutton(frame, text="Show extrema", variable=self.extrema_enabled,
+        ttk.Checkbutton(self.control_frame, text="Show extrema", variable=self.extrema_enabled,
                        command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="Min", variable=self.extrema_minima,
+        ttk.Checkbutton(self.control_frame, text="Min", variable=self.extrema_minima,
                        command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="Max", variable=self.extrema_maxima,
+        ttk.Checkbutton(self.control_frame, text="Max", variable=self.extrema_maxima,
                        command=self.update).pack(side=tk.LEFT, padx=2)
         
-        ttk.Label(frame, text="Range [GHz]:").pack(side=tk.LEFT, padx=(10,2))
-        ttk.Entry(frame, textvariable=self.extrema_range_min, 
+        ttk.Label(self.control_frame, text="Range [GHz]:").pack(side=tk.LEFT, padx=(10,2))
+        ttk.Entry(self.control_frame, textvariable=self.extrema_range_min, 
                  width=5).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame, text="-").pack(side=tk.LEFT, padx=2)
-        ttk.Entry(frame, textvariable=self.extrema_range_max,
+        ttk.Label(self.control_frame, text="-").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(self.control_frame, textvariable=self.extrema_range_max,
                  width=5).pack(side=tk.LEFT, padx=2)
-        
-        self.control_panel = frame
-
-
-    def _build_extrema_ui(self):
-        frame = ttk.Frame(self.parent)
-        frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
-        
-        ttk.Checkbutton(frame, text="Show extrema", variable=self.extrema_enabled,
-                       command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="Min", variable=self.extrema_minima,
-                       command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Checkbutton(frame, text="Max", variable=self.extrema_maxima,
-                       command=self.update).pack(side=tk.LEFT, padx=2)
-        
-        ttk.Label(frame, text="Range [GHz]:").pack(side=tk.LEFT, padx=(10,2))
-        ttk.Entry(frame, textvariable=self.extrema_range_min, 
-                 width=5).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame, text="-").pack(side=tk.LEFT, padx=2)
-        ttk.Entry(frame, textvariable=self.extrema_range_max,
-                 width=5).pack(side=tk.LEFT, padx=2)
-        
-        return frame
     
     def _get_selected_params(self):
         params = []

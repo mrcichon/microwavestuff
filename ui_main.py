@@ -85,8 +85,8 @@ class App(tk.Tk):
         self._validateNumeric(ent2, self.fmax, self._updAll)
         
         ttk.Button(lfrm, text="Dodaj pliki", command=self._addFiles).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="Usuń wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="Usuń zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="UsuÅ„ wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="UsuÅ„ zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Average files", command=self._avgFiles).pack(anchor="w", pady=(0,10))
         
         ttk.Checkbutton(lfrm, text="Show legend panel", variable=self.legendVisible,
@@ -150,6 +150,9 @@ class App(tk.Tk):
         frmF = ttk.Frame(self.nb)
         self.nb.add(frmF, text="Wykresy")
         
+        control_frame_F = ttk.Frame(frmF)
+        control_frame_F.pack(side=tk.BOTTOM, fill=tk.X)
+        
         self.plotPaneF = ttk.PanedWindow(frmF, orient=tk.HORIZONTAL)
         self.plotPaneF.pack(fill=tk.BOTH, expand=True)
         
@@ -189,6 +192,7 @@ class App(tk.Tk):
         
         self.tab_freq = TabFreq(
             parent=frmF,
+            control_frame=control_frame_F,
             fig=self.figF,
             canvas=self.cvF,
             legend_frame=self.legendItemsFrameF,
@@ -205,6 +209,9 @@ class App(tk.Tk):
     def _create_time_tab(self):
         frmT = ttk.Frame(self.nb)
         self.nb.add(frmT, text="Time domain")
+        control_frame_T = ttk.Frame(frmT)
+        control_frame_T.pack(side=tk.BOTTOM, fill=tk.X)
+
         
         self.plotPaneT = ttk.PanedWindow(frmT, orient=tk.HORIZONTAL)
         self.plotPaneT.pack(fill=tk.BOTH, expand=True)
@@ -245,6 +252,7 @@ class App(tk.Tk):
         
         self.tab_time = TabTime(
             parent=frmT,
+            control_frame=control_frame_T,
             fig=self.figT,
             canvas=self.cvT,
             legend_frame=self.legendItemsFrameT,
@@ -264,6 +272,9 @@ class App(tk.Tk):
         
         self.plotPaneR = ttk.PanedWindow(frmR, orient=tk.HORIZONTAL)
         self.plotPaneR.pack(fill=tk.BOTH, expand=True)
+        control_frame_R = ttk.Frame(frmR)
+        control_frame_R.pack(side=tk.BOTTOM, fill=tk.X)
+
         
         plotFrameR = ttk.Frame(self.plotPaneR)
         self.plotPaneR.add(plotFrameR, weight=3)
@@ -300,6 +311,7 @@ class App(tk.Tk):
         
         self.tab_regex = TabRegex(
             parent=frmR,
+            control_frame=control_frame_R,
             fig=self.figR,
             canvas=self.cvR,
             legend_frame=self.legendItemsFrameR,
@@ -319,11 +331,15 @@ class App(tk.Tk):
         self.cvO.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         
         self.tbO = NavigationToolbar2Tk(self.cvO, frmO)
+        control_frame_O = ttk.Frame(frmO)
+        control_frame_O.pack(side=tk.BOTTOM, fill=tk.X)
+
         self.tbO.update()
         self.tbO.pack(fill=tk.X)
         
         self.tab_overlap = TabOverlap(
             parent=frmO,
+            control_frame=control_frame_O,
             fig=self.figO,
             ax=self.axO,
             canvas=self.cvO,
@@ -344,8 +360,12 @@ class App(tk.Tk):
         self.tbV.update()
         self.tbV.pack(fill=tk.X)
         
+        control_frame_V = ttk.Frame(frmV)
+        control_frame_V.pack(side=tk.BOTTOM, fill=tk.X)
+
         self.tab_variance = TabVariance(
             parent=frmV,
+            control_frame=control_frame_V,
             fig=self.figV,
             ax=self.axV,
             canvas=self.cvV,
@@ -369,8 +389,12 @@ class App(tk.Tk):
         self.tbSC.update()
         self.tbSC.pack(fill=tk.X)
         
+        control_frame_SC = ttk.Frame(frmSC)
+        control_frame_SC.pack(side=tk.BOTTOM, fill=tk.X)
+        
         self.tab_shape = TabShapeComparison(
             parent=frmSC,
+            control_frame=control_frame_SC,
             fig=self.figSC,
             canvas=self.cvSC,
             get_files_func=self.get_files,
@@ -382,6 +406,9 @@ class App(tk.Tk):
         frmI = ttk.Frame(self.nb)
         self.nb.add(frmI, text="Integration")
         
+        control_frame_I = ttk.Frame(frmI)
+        control_frame_I.pack(side=tk.BOTTOM, fill=tk.X)
+        
         self.figI, self.axI = plt.subplots(figsize=(10,8))
         self.cvI = FigureCanvasTkAgg(self.figI, master=frmI)
         self.cvI.get_tk_widget().pack(fill=tk.BOTH, expand=True)
@@ -392,6 +419,7 @@ class App(tk.Tk):
         
         self.tab_integrate = TabIntegrate(
             parent=frmI,
+            control_frame=control_frame_I,
             fig=self.figI,
             ax=self.axI,
             canvas=self.cvI,
@@ -404,6 +432,9 @@ class App(tk.Tk):
         frmTDA = ttk.Frame(self.nb)
         self.nb.add(frmTDA, text="TD Analysis")
         
+        control_frame_TDA = ttk.Frame(frmTDA)
+        control_frame_TDA.pack(side=tk.BOTTOM, fill=tk.X)
+        
         self.figTDA = plt.figure(figsize=(10,8))
         self.cvTDA = FigureCanvasTkAgg(self.figTDA, master=frmTDA)
         self.cvTDA.get_tk_widget().pack(fill=tk.BOTH, expand=True)
@@ -414,6 +445,7 @@ class App(tk.Tk):
         
         self.tab_td_analysis = TabTDAnalysis(
             parent=frmTDA,
+            control_frame=control_frame_TDA,
             fig=self.figTDA,
             canvas=self.cvTDA,
             get_files_func=self.get_files,
@@ -446,6 +478,9 @@ class App(tk.Tk):
         frmPolar = ttk.Frame(self.nb)
         self.nb.add(frmPolar, text="Polar Plots")
         
+        control_frame_Polar = ttk.Frame(frmPolar)
+        control_frame_Polar.pack(side=tk.BOTTOM, fill=tk.X)
+        
         self.figPolar = plt.figure(figsize=(10, 8), constrained_layout=True)
         self.axPolar = self.figPolar.add_subplot(111, projection="polar")
         self.cvPolar = FigureCanvasTkAgg(self.figPolar, master=frmPolar)
@@ -457,6 +492,7 @@ class App(tk.Tk):
         
         self.tab_polar = TabPolar(
             parent=frmPolar,
+            control_frame=control_frame_Polar,
             fig=self.figPolar,
             ax=self.axPolar,
             canvas=self.cvPolar
@@ -1000,7 +1036,7 @@ class App(tk.Tk):
         ttk.Label(dialog, text="Preview:").grid(row=5, column=0, padx=10, pady=(15,5), sticky="w")
         previewFrame = ttk.Frame(dialog, relief=tk.SUNKEN, borderwidth=2)
         previewFrame.grid(row=5, column=1, padx=10, pady=(15,5), sticky="ew")
-        previewLabel = tk.Label(previewFrame, text="Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â", font=("", 14), background="white")
+        previewLabel = tk.Label(previewFrame, text="ÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚Â", font=("", 14), background="white")
         previewLabel.pack(padx=20, pady=10)
         
         def updatePreview(*args):
