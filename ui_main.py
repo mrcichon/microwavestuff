@@ -64,6 +64,7 @@ class App(tk.Tk):
         self.legendVisible = tk.BooleanVar(value=True)
         self.legendOnPlot = tk.BooleanVar(value=False)
         self.use_db_scale = tk.BooleanVar(value=True)
+        self.markers_enabled = tk.BooleanVar(value=False)
         
         self._makeUi()
         self._updAll()
@@ -85,8 +86,8 @@ class App(tk.Tk):
         self._validateNumeric(ent2, self.fmax, self._updAll)
         
         ttk.Button(lfrm, text="Dodaj pliki", command=self._addFiles).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="UsuÅ„ wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="UsuÅ„ zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="Usuń wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="Usuń zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Average files", command=self._avgFiles).pack(anchor="w", pady=(0,10))
         
         ttk.Checkbutton(lfrm, text="Show legend panel", variable=self.legendVisible,
@@ -95,6 +96,7 @@ class App(tk.Tk):
                        command=self._updAll).pack(anchor="w", pady=(0,10))
         ttk.Checkbutton(lfrm, text="dB scale", variable=self.use_db_scale,
                        command=self._updAll).pack(anchor="w", pady=(0,10))
+        ttk.Checkbutton(lfrm, text="Enable markers", variable=self.markers_enabled).pack(anchor="w", pady=(0,10))
         
         fileListFrame = ttk.Frame(lfrm)
         fileListFrame.pack(anchor="w", fill=tk.BOTH, pady=(0,10))
@@ -322,6 +324,8 @@ class App(tk.Tk):
             get_scale_mode_func=self.get_scale_mode
         )
         
+        self.cvR.mpl_connect('button_press_event', self._onClick)
+    
     def _create_overlap_tab(self):
         frmO = ttk.Frame(self.nb)
         self.nb.add(frmO, text="Range Overlaps")
@@ -944,13 +948,75 @@ class App(tk.Tk):
             self.current_tab.canvas.draw()
     
     def _onClick(self, ev):
-        pass
+        if not self.markers_enabled.get():
+            return
+        if ev.inaxes is None:
+            return
+        
+        x = ev.xdata
+        y = ev.ydata
+        if x is None or y is None:
+            return
+        
+        axc = ev.inaxes
+        mind = float("inf")
+        best = None
+        
+        for ln in axc.get_lines():
+            xd = ln.get_xdata()
+            yd = ln.get_ydata()
+            if len(xd) == 0:
+                continue
+            dists = np.sqrt((xd - x) ** 2 + (yd - y) ** 2)
+            idx = np.argmin(dists)
+            if dists[idx] < mind:
+                mind = dists[idx]
+                xf = xd[idx]
+                yf = yd[idx]
+                lbl = ln.get_label()
+                col = ln.get_color()
+                best = (xf, yf, lbl, col)
+        
+        if best:
+            xf, yf, lbl, col = best
+            m, = axc.plot([xf], [yf], 'o', color=col, markersize=9)
+            t = axc.annotate(
+                f"{round(xf/1e6,3)} MHz\n{round(yf,2)} dB",
+                xy=(xf, yf), xytext=(10, 20),
+                textcoords="offset points",
+                bbox=dict(boxstyle="round,pad=0.2", fc="yellow", alpha=0.5),
+                arrowprops=dict(arrowstyle="->", color=col, lw=1.5),
+                fontsize=9
+            )
+            
+            self.mrk.append({'marker': m, 'text': t, 'ax': axc})
+            txt = f"{lbl}: {round(xf/1e6,3)} MHz  |  {round(yf,2)} dB\n"
+            self.mtxt.append(txt)
+            self._update_text_panel()
+            ev.canvas.draw()
     
     def _onPick(self, ev):
         pass
     
     def _onClickVar(self, ev):
-        pass
+        if not self.markers_enabled.get():
+            return
+        if ev.inaxes is None:
+            return
+        
+        x, y = ev.xdata, ev.ydata
+        
+        marker = ev.inaxes.plot(x, y, 'rx', markersize=10, markeredgewidth=2)[0]
+        text = ev.inaxes.text(x, y, f'  ({x:.3e}, {y:.3e})', 
+                             fontsize=9, color='red', 
+                             verticalalignment='bottom')
+        
+        self.mrk.append({'marker': marker, 'text': text})
+        marker_info = f"Variance marker: freq={x:.3e} Hz, variance={y:.3e}\n"
+        self.mtxt.append(marker_info)
+        
+        self._update_text_panel()
+        ev.canvas.draw()
     
     def _onPickVar(self, ev):
         pass
