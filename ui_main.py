@@ -21,6 +21,7 @@ from ui_tab_shape import TabShapeComparison
 from ui_tab_integrate import TabIntegrate
 from ui_tab_td_analysis import TabTDAnalysis
 from ui_tab_polar import TabPolar
+from ui_tab_rozpierdol import TabRozpierdol as TabOverlay
 
 try:
     from ui_tab_ml import TabMLTraining
@@ -147,6 +148,7 @@ class App(tk.Tk):
         if ML_AVAILABLE:
             self._create_ml_tab()
         self._create_polar_tab()
+        self._create_overlay_tab()
     
     def _create_freq_tab(self):
         frmF = ttk.Frame(self.nb)
@@ -501,7 +503,65 @@ class App(tk.Tk):
             ax=self.axPolar,
             canvas=self.cvPolar
         )
-
+    
+    def _create_overlay_tab(self):
+        frmOverlay = ttk.Frame(self.nb)
+        self.nb.add(frmOverlay, text="S-Param Overlay")
+        
+        control_frame_Overlay = ttk.Frame(frmOverlay)
+        control_frame_Overlay.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        self.plotPaneOverlay = ttk.PanedWindow(frmOverlay, orient=tk.HORIZONTAL)
+        self.plotPaneOverlay.pack(fill=tk.BOTH, expand=True)
+        
+        plotFrame = ttk.Frame(self.plotPaneOverlay)
+        self.plotPaneOverlay.add(plotFrame, weight=3)
+        
+        self.figOverlay = plt.figure(figsize=(10,7))
+        self.cvOverlay = FigureCanvasTkAgg(self.figOverlay, master=plotFrame)
+        canvas_widget = self.cvOverlay.get_tk_widget()
+        
+        toolbar_frame = ttk.Frame(plotFrame)
+        toolbar_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        self.tbOverlay = NavigationToolbar2Tk(self.cvOverlay, toolbar_frame)
+        self.tbOverlay.update()
+        self.tbOverlay.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+        
+        self.legendFrameOverlay = ttk.Frame(self.plotPaneOverlay)
+        self.plotPaneOverlay.add(self.legendFrameOverlay, weight=1)
+        ttk.Label(self.legendFrameOverlay, text="Legend", font=("", 10, "bold")).pack(pady=5)
+        
+        legendScrollOverlay = ttk.Scrollbar(self.legendFrameOverlay)
+        legendScrollOverlay.pack(side=tk.RIGHT, fill=tk.Y)
+        self.legendCanvasOverlay = tk.Canvas(self.legendFrameOverlay, yscrollcommand=legendScrollOverlay.set, width=150)
+        self.legendCanvasOverlay.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        legendScrollOverlay.config(command=self.legendCanvasOverlay.yview)
+        
+        self.legendItemsFrameOverlay = ttk.Frame(self.legendCanvasOverlay)
+        self.legendCanvasOverlay.create_window((0,0), window=self.legendItemsFrameOverlay, anchor="nw")
+        
+        def updateLegendScrollOverlay(event=None):
+            self.legendCanvasOverlay.configure(scrollregion=self.legendCanvasOverlay.bbox("all"))
+        self.legendItemsFrameOverlay.bind("<Configure>", updateLegendScrollOverlay)
+        
+        if not self.legendVisible.get():
+            self.plotPaneOverlay.forget(self.legendFrameOverlay)
+        
+        self.tab_overlay = TabOverlay(
+            parent=frmOverlay,
+            control_frame=control_frame_Overlay,
+            fig=self.figOverlay,
+            canvas=self.cvOverlay,
+            legend_frame=self.legendItemsFrameOverlay,
+            legend_canvas=self.legendCanvasOverlay,
+            get_files_func=self.get_files,
+            get_freq_range_func=self.get_freq_range,
+            get_legend_on_plot_func=lambda: self.legendOnPlot.get()
+        )
+        
+        self.cvOverlay.mpl_connect('button_press_event', self._onClick)
+        self.cvOverlay.mpl_connect('pick_event', self._onPick)
 
 
     def get_files(self):
@@ -906,6 +966,7 @@ class App(tk.Tk):
             "Integration": self.tab_integrate,
             "TD Analysis": self.tab_td_analysis,
             "Polar Plots": self.tab_polar,
+            "S-Param Overlay": self.tab_overlay,
         }
         if ML_AVAILABLE:
             tab_map["Model Training"] = self.tab_ml
@@ -1032,10 +1093,12 @@ class App(tk.Tk):
             self.plotPaneF.add(self.legendFrameF, weight=1)
             self.plotPaneT.add(self.legendFrameT, weight=1)
             self.plotPaneR.add(self.legendFrameR, weight=1)
+            self.plotPaneOverlay.add(self.legendFrameOverlay, weight=1)
         else:
             self.plotPaneF.forget(self.legendFrameF)
             self.plotPaneT.forget(self.legendFrameT)
             self.plotPaneR.forget(self.legendFrameR)
+            self.plotPaneOverlay.forget(self.legendFrameOverlay)
     
     def _showStyleMenu(self, event, filepath):
         file_data = None
@@ -1047,9 +1110,21 @@ class App(tk.Tk):
         if file_data is None:
             return
         
+        if 'overlay_params' not in file_data:
+            file_data['overlay_params'] = set()
+        
         menu = tk.Menu(self, tearoff=0)
         menu.add_command(label="Edit line style...", 
                         command=lambda: self._editLineStyle(filepath, file_data))
+        
+        overlay_menu = tk.Menu(menu, tearoff=0)
+        for param in ['s11', 's21', 's12', 's22']:
+            overlay_menu.add_command(
+                label=f"{'✓ ' if param in file_data['overlay_params'] else '  '}{param.upper()}",
+                command=lambda p=param: self._toggleOverlayParam(filepath, p)
+            )
+        menu.add_cascade(label="Add to Overlay", menu=overlay_menu)
+        
         menu.add_command(label="Delete", 
                         command=lambda: self._deleteLine(filepath))
         menu.post(event.x_root, event.y_root)
@@ -1102,7 +1177,7 @@ class App(tk.Tk):
         ttk.Label(dialog, text="Preview:").grid(row=5, column=0, padx=10, pady=(15,5), sticky="w")
         previewFrame = ttk.Frame(dialog, relief=tk.SUNKEN, borderwidth=2)
         previewFrame.grid(row=5, column=1, padx=10, pady=(15,5), sticky="ew")
-        previewLabel = tk.Label(previewFrame, text="ÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚Â", font=("", 14), background="white")
+        previewLabel = tk.Label(previewFrame, text="ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â", font=("", 14), background="white")
         previewLabel.pack(padx=20, pady=10)
         
         def updatePreview(*args):
@@ -1168,6 +1243,18 @@ class App(tk.Tk):
             chk.bind("<Button-3>", lambda e, path=p: self._showStyleMenu(e, path))
         
         self._updAll()
+    
+    def _toggleOverlayParam(self, filepath, param):
+        for v, p, d in self.fls:
+            if p == filepath:
+                if 'overlay_params' not in d:
+                    d['overlay_params'] = set()
+                if param in d['overlay_params']:
+                    d['overlay_params'].remove(param)
+                else:
+                    d['overlay_params'].add(param)
+                self._updAll()
+                break
     
     def _validateNumeric(self, widget, var, callback=None):
         def validate_and_update(*args):
