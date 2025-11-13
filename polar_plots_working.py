@@ -1220,7 +1220,7 @@ class TabAll(ttk.Frame):
             })
 
         # Use wider scale to accommodate all types
-        draw_polar(self.ax, series, "Porównanie wszystkich pomiarów", -20.0, 15.0, 5.0)
+        draw_polar(self.ax, series, "Comparison of radiation pattern", -10.0, 15.0, 2.5)
         self.canvas.draw_idle()
         self._legend([(s["color"], s["label"]) for s in series])
 
