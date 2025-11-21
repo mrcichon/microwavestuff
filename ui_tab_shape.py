@@ -69,17 +69,17 @@ class TabShapeComparison:
         self.adapt_frame.pack_forget()
         
         ttk.Label(self.adapt_frame, text="Adaptive:").pack(side=tk.LEFT, padx=(0,5))
-        ttk.Label(self.adapt_frame, text="ÃŽÂ±:").pack(side=tk.LEFT)
+        ttk.Label(self.adapt_frame, text="±:").pack(side=tk.LEFT)
         ttk.Spinbox(self.adapt_frame, from_=1.0, to=4.0, increment=0.5,
                    textvariable=self.shape_alpha, width=5,
                    command=self.update).pack(side=tk.LEFT, padx=2)
         
-        ttk.Label(self.adapt_frame, text="ÃÆ’:").pack(side=tk.LEFT, padx=(10,2))
+        ttk.Label(self.adapt_frame, text="").pack(side=tk.LEFT, padx=(10,2))
         ttk.Spinbox(self.adapt_frame, from_=2, to=20,
                    textvariable=self.shape_sigma, width=5,
                    command=self.update).pack(side=tk.LEFT, padx=2)
         
-        ttk.Label(self.adapt_frame, text="ÃŽÂ³:").pack(side=tk.LEFT, padx=(10,2))
+        ttk.Label(self.adapt_frame, text="").pack(side=tk.LEFT, padx=(10,2))
         ttk.Spinbox(self.adapt_frame, from_=0.5, to=4.0, increment=0.5,
                    textvariable=self.shape_gamma, width=5,
                    command=self.update).pack(side=tk.LEFT, padx=2)
@@ -256,7 +256,7 @@ class TabShapeComparison:
         
         metric_names = {"xcorr": "Cross-Correlation", "l1": "L1 Distance", "l2": "L2 Distance",
                        "al1": "Adaptive L1", "al2": "Adaptive L2"}
-        title = f"{metric_names.get(self.shape_metric.get(), self.shape_metric.get())} Ã¢â‚¬â€ {self.shape_param.get().upper()}"
+        title = f"{metric_names.get(self.shape_metric.get(), self.shape_metric.get())} - {self.shape_param.get().upper()}"
         if self.shape_normalize.get():
             title += " (Normalized)"
         self.ax.set_title(title)

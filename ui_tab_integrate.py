@@ -153,7 +153,7 @@ class TabIntegrate:
         self.ax.set_xlabel('Files')
         self.ax.set_ylabel('Integrated value')
         
-        sort_label = "name" if result['sort_by'] == "name" else f"{result['sort_by'].upper()} {'Ã¢â€ â€˜' if self.asc_var.get() else 'Ã¢â€ â€œ'}"
+        sort_label = "name" if result['sort_by'] == "name" else f"{result['sort_by'].upper()} {'↑' if self.asc_var.get() else '↓'}"
         self.ax.set_title(f"Integration of S-parameters ({result['scale_type']} scale, sorted by {sort_label})")
         
         self.ax.set_xticks(x + width * (n_params - 1) / 2)

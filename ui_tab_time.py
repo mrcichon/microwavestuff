@@ -129,6 +129,9 @@ class TabTime:
     def _plot_result(self):
         axes = self.fig.subplots(3, 1, sharex=False)
         axF, axTR, axTG = axes
+        self.ax_freq = axF
+        self.ax_time = axTR
+        self.ax_gated = axTG
         
         prm = self.last_result['param'].upper()
         use_db = self.get_scale_mode()
@@ -143,22 +146,22 @@ class TabTime:
             if data['linewidth'] != 1.0:
                 kwargs['linewidth'] = data['linewidth']
             
-            line = axF.plot(data['freq'], data['freq_data'], **kwargs)[0]
-            axTR.plot(data['t_ns'], data['time_data'], **kwargs)
+            line = self.ax_freq.plot(data['freq'], data['freq_data'], **kwargs)[0]
+            self.ax_time.plot(data['t_ns'], data['time_data'], **kwargs)
             
             if data['name'] not in seen_labels:
                 legend_items.append((data['name'], line.get_color()))
                 seen_labels.add(data['name'])
         
-        axF.set_ylabel(f"|{prm}| [{unit}]")
-        axF.set_title(f"{prm} (frequency domain - raw)")
-        axF.grid(True)
+        self.ax_freq.set_ylabel(f"|{prm}| [{unit}]")
+        self.ax_freq.set_title(f"{prm} (frequency domain - raw)")
+        self.ax_freq.grid(True)
         
-        axTR.set_ylabel(f"{prm} TD [{unit}]")
-        axTR.set_xlabel("Time [ns]")
-        axTR.set_title(f"{prm} (time domain - raw)")
-        axTR.grid(True)
-        axTR.set_xlim(0, 50)
+        self.ax_time.set_ylabel(f"{prm} TD [{unit}]")
+        self.ax_time.set_xlabel("Time [ns]")
+        self.ax_time.set_title(f"{prm} (time domain - raw)")
+        self.ax_time.grid(True)
+        self.ax_time.set_xlim(0, 50)
         
         if self.last_result['gated']:
             for data in self.last_result['gated']:
@@ -167,12 +170,12 @@ class TabTime:
                     kwargs['color'] = data['color']
                 if data['linewidth'] != 1.0:
                     kwargs['linewidth'] = data['linewidth']
-                axTG.plot(data['freq'], data['gated_data'], **kwargs)
+                self.ax_gated.plot(data['freq'], data['gated_data'], **kwargs)
         
-        axTG.set_ylabel(f"{prm} [{unit}]")
-        axTG.set_xlabel("Frequency [Hz]")
-        axTG.set_title(f"{prm} (frequency domain - gated)")
-        axTG.grid(True)
+        self.ax_gated.set_ylabel(f"{prm} [{unit}]")
+        self.ax_gated.set_xlabel("Frequency [Hz]")
+        self.ax_gated.set_title(f"{prm} (frequency domain - gated)")
+        self.ax_gated.grid(True)
         
         for line in self.extrema_lines:
             try:
@@ -183,17 +186,17 @@ class TabTime:
         
         if self.last_result['extrema']:
             for ext in self.last_result['extrema']:
-                ax = axTG if ext['domain'] == 'freq_gated' else axF
+                ax = self.ax_gated if ext['domain'] == 'freq_gated' else self.ax_freq
                 color = 'red' if ext['type'] == 'max' else 'blue'
                 line = ax.axvline(x=ext['freq'], color=color, linestyle='--',
                                 alpha=0.3, linewidth=0.8)
                 self.extrema_lines.append(line)
         
         if self.get_legend_on_plot():
-            handles, labels = axF.get_legend_handles_labels()
+            handles, labels = self.ax_freq.get_legend_handles_labels()
             if labels:
                 ncol = min(5, (len(labels) - 1) // 10 + 1)
-                axF.legend(handles, labels, loc='best', ncol=ncol,
+                self.ax_freq.legend(handles, labels, loc='best', ncol=ncol,
                           fontsize=8, framealpha=0.9)
         
         self.fig.tight_layout()

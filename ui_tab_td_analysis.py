@@ -41,7 +41,7 @@ class TabTDAnalysis:
         ttk.Button(self.control_frame, text="Clear Markers",
                   command=self._clear_markers).pack(side=tk.LEFT, padx=2)
         
-        ttk.Label(self.control_frame, text="Checks: t_max(S11) ≈ 2×t_max(S21)",
+        ttk.Label(self.control_frame, text="Checks: t_max(S11) ≈ 2Ã—t_max(S21)",
                  font=("", 8), foreground="gray").pack(side=tk.LEFT, padx=10)
         
         
@@ -104,6 +104,8 @@ class TabTDAnalysis:
         self.fig.clear()
         self.ax1 = self.fig.add_subplot(211, sharex=None)
         self.ax2 = self.fig.add_subplot(212, sharex=self.ax1)
+        self.ax_s11 = self.ax1
+        self.ax_s21 = self.ax2
         
         files_data = self._get_files_data()
         

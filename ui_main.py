@@ -1041,8 +1041,23 @@ class App(tk.Tk):
         if best:
             xf, yf, lbl, col = best
             m, = axc.plot([xf], [yf], 'o', color=col, markersize=9)
+            
+            use_db = self.get_scale_mode()
+            unit = "dB" if use_db else "mag"
+            
+            xlabel = axc.get_xlabel().lower()
+            is_time_domain = 'time' in xlabel and any(unit_str in xlabel for unit_str in ['ns', 'ms', 'us', 'ps', ' s]', '[s]'])
+            
+            if is_time_domain:
+                time_unit = 'ns' if 'ns' in xlabel else ('ms' if 'ms' in xlabel else ('μs' if 'us' in xlabel else 's'))
+                annotation_text = f"{round(xf,3)} {time_unit}\n{round(yf,2)} {unit}"
+                marker_text = f"{lbl}: {round(xf,3)} {time_unit}  |  {round(yf,2)} {unit}\n"
+            else:
+                annotation_text = f"{round(xf/1e6,3)} MHz\n{round(yf,2)} {unit}"
+                marker_text = f"{lbl}: {round(xf/1e6,3)} MHz  |  {round(yf,2)} {unit}\n"
+            
             t = axc.annotate(
-                f"{round(xf/1e6,3)} MHz\n{round(yf,2)} dB",
+                annotation_text,
                 xy=(xf, yf), xytext=(10, 20),
                 textcoords="offset points",
                 bbox=dict(boxstyle="round,pad=0.2", fc="yellow", alpha=0.5),
@@ -1051,8 +1066,7 @@ class App(tk.Tk):
             )
             
             self.mrk.append({'marker': m, 'text': t, 'ax': axc})
-            txt = f"{lbl}: {round(xf/1e6,3)} MHz  |  {round(yf,2)} dB\n"
-            self.mtxt.append(txt)
+            self.mtxt.append(marker_text)
             self._update_text_panel()
             ev.canvas.draw()
     
@@ -1086,7 +1100,55 @@ class App(tk.Tk):
         pass
     
     def _onClickTDA(self, ev):
-        pass
+        if not self.markers_enabled.get():
+            return
+        if ev.inaxes is None:
+            return
+        
+        x = ev.xdata
+        y = ev.ydata
+        if x is None or y is None:
+            return
+        
+        axc = ev.inaxes
+        mind = float("inf")
+        best = None
+        
+        for ln in axc.get_lines():
+            xd = ln.get_xdata()
+            yd = ln.get_ydata()
+            if len(xd) == 0:
+                continue
+            dists = np.sqrt((xd - x) ** 2 + (yd - y) ** 2)
+            idx = np.argmin(dists)
+            if dists[idx] < mind:
+                mind = dists[idx]
+                xf = xd[idx]
+                yf = yd[idx]
+                lbl = ln.get_label()
+                col = ln.get_color()
+                best = (xf, yf, lbl, col)
+        
+        if best:
+            xf, yf, lbl, col = best
+            m, = axc.plot([xf], [yf], 'o', color=col, markersize=9)
+            
+            annotation_text = f"{round(xf, 3)} ns\n{round(yf, 2)} dB"
+            marker_text = f"{lbl}: {round(xf, 3)} ns  |  {round(yf, 2)} dB\n"
+            
+            t = axc.annotate(
+                annotation_text,
+                xy=(xf, yf), xytext=(10, 20),
+                textcoords="offset points",
+                bbox=dict(boxstyle="round,pad=0.2", fc="yellow", alpha=0.5),
+                arrowprops=dict(arrowstyle="->", color=col, lw=1.5),
+                fontsize=9
+            )
+            
+            self.mrk.append({'marker': m, 'text': t, 'ax': axc})
+            self.mtxt.append(marker_text)
+            self._update_text_panel()
+            ev.canvas.draw()
     
     def _toggleLegend(self):
         if self.legendVisible.get():
@@ -1120,7 +1182,7 @@ class App(tk.Tk):
         overlay_menu = tk.Menu(menu, tearoff=0)
         for param in ['s11', 's21', 's12', 's22']:
             overlay_menu.add_command(
-                label=f"{'✓ ' if param in file_data['overlay_params'] else '  '}{param.upper()}",
+                label=f"{'âœ“ ' if param in file_data['overlay_params'] else '  '}{param.upper()}",
                 command=lambda p=param: self._toggleOverlayParam(filepath, p)
             )
         menu.add_cascade(label="Add to Overlay", menu=overlay_menu)
@@ -1177,7 +1239,7 @@ class App(tk.Tk):
         ttk.Label(dialog, text="Preview:").grid(row=5, column=0, padx=10, pady=(15,5), sticky="w")
         previewFrame = ttk.Frame(dialog, relief=tk.SUNKEN, borderwidth=2)
         previewFrame.grid(row=5, column=1, padx=10, pady=(15,5), sticky="ew")
-        previewLabel = tk.Label(previewFrame, text="ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â", font=("", 14), background="white")
+        previewLabel = tk.Label(previewFrame, text="━━━", font=("", 14), background="white")
         previewLabel.pack(padx=20, pady=10)
         
         def updatePreview(*args):
