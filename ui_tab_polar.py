@@ -212,7 +212,6 @@ class TabPolar:
             try:
                 df = parse_theta_phi_file(path)
                 theta, db, used = extract_theta_phi_series(df)
-                theta = (360.0 - theta) % 360.0
                 
                 var = tk.BooleanVar(value=True)
                 self.theta_phi_files.append({
@@ -291,7 +290,6 @@ class TabPolar:
             try:
                 df = parse_theta_phi_file(path)
                 theta, db, used = extract_theta_phi_series(df)
-                theta = (360.0 - theta) % 360.0
                 
                 var = tk.BooleanVar(value=True)
                 self.combined_items.append({
@@ -472,7 +470,7 @@ class TabPolar:
         self.ax.set_title(title_with_gain, pad=12, fontsize=10)
         
         if series_list:
-            self.ax.legend(loc='upper left', bbox_to_anchor=(1.05, 1), fontsize=8)
+            self.ax.legend(loc='upper left', bbox_to_anchor=(1.05, 1), fontsize=16)
         
         self.canvas.draw_idle()
     
