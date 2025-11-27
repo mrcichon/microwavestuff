@@ -29,8 +29,9 @@ def extract_freq_data(files_list, freq_range_str, selected_params, use_db=True):
             continue
         
         ext = Path(p).suffix.lower()
+        loaded = False
         
-        if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
+        if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p', '.csv']:
             try:
                 ntw_full = d.get('ntwk_full')
                 if ntw_full is None:
@@ -49,23 +50,27 @@ def extract_freq_data(files_list, freq_range_str, selected_params, use_db=True):
                 
                 params_data = {}
                 for param in selected_params:
-                    s_param = getattr(ntw, param)
+                    s_param = getattr(ntw, param, None)
+                    if s_param is None:
+                        continue
                     arr = s_param.s_db.flatten() if use_db else s_param.s_mag.flatten()
                     params_data[param] = arr
                 
-                result.append({
-                    'name': fname,
-                    'path': p,
-                    'freq': ntw.f,
-                    'params': params_data,
-                    'color': d.get('line_color'),
-                    'linewidth': d.get('line_width', 1.0)
-                })
+                if params_data:
+                    result.append({
+                        'name': fname,
+                        'path': p,
+                        'freq': ntw.f,
+                        'params': params_data,
+                        'color': d.get('line_color'),
+                        'linewidth': d.get('line_width', 1.0)
+                    })
+                    loaded = True
                 
             except Exception:
                 pass
         
-        elif ext == '.csv' and 's11' in selected_params:
+        if not loaded and ext == '.csv' and 's11' in selected_params:
             try:
                 import pandas as pd
                 

@@ -6,28 +6,73 @@ from pathlib import Path
 import re
 import io
 
-def loadFile(p):
+def _read_file_with_fallback(p):
     encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
-    l = None
-    
     for encoding in encodings:
         try:
             with open(p, "r", encoding=encoding) as f:
-                l = f.readlines()
-                break
+                return f.read()
         except UnicodeDecodeError:
             continue
+    with open(p, "r", encoding="utf-8", errors="replace") as f:
+        return f.read()
+
+def _is_spectrum_analyzer_csv(content):
+    return "Sweep SA" in content or ("Trace Data" in content and "Start Frequency" in content)
+
+def _parse_spectrum_analyzer_csv(content, path):
+    lines = content.replace("\r\n", "\n").split("\n")
     
-    if l is None:
-        with open(p, "r", encoding="utf-8", errors="replace") as f:
-            l = f.readlines()
+    data_start = None
+    for i, line in enumerate(lines):
+        if line.strip().startswith("Trace Data"):
+            data_start = i + 1
+            break
     
+    if data_start is None:
+        raise ValueError("Could not find 'Trace Data' marker in spectrum analyzer CSV")
+    
+    freqs = []
+    powers = []
+    for line in lines[data_start:]:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(",")
+        if len(parts) >= 2:
+            try:
+                freq = float(parts[0].replace(",", "."))
+                power = float(parts[1].replace(",", "."))
+                freqs.append(freq)
+                powers.append(power)
+            except ValueError:
+                continue
+    
+    if not freqs:
+        raise ValueError("No valid frequency/power data found in spectrum analyzer CSV")
+    
+    f = np.array(freqs)
+    power_dbm = np.array(powers)
+    s_mag = 10 ** (power_dbm / 20.0)
+    s = s_mag.astype(complex).reshape(-1, 1, 1)
+    
+    network = rf.Network(f=f, s=s, f_unit='Hz')
+    network.name = Path(path).stem
+    return network
+
+def loadFile(p):
+    content = _read_file_with_fallback(p)
+    
+    if _is_spectrum_analyzer_csv(content):
+        return _parse_spectrum_analyzer_csv(content, p)
+    
+    lines = content.split("\n")
     fx = []
-    for ln in l:
+    for ln in lines:
         fx.append(ln if ln.lstrip().startswith(("!", "#")) else ln.replace(",", "."))
     
     t = tempfile.NamedTemporaryFile("w+", delete=False, suffix=Path(p).suffix, encoding="utf-8")
-    t.writelines(fx)
+    t.write("\n".join(fx))
     t.flush()
     t.close()
     
@@ -35,7 +80,6 @@ def loadFile(p):
     return network
 
 def parse_polar_rms(path):
-    """Parse MegiQ RMS files - handles both linear (HV) and circular (RHCP/LHCP) polarization"""
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         raw = f.read()
     
@@ -112,7 +156,6 @@ def parse_polar_rms(path):
         }
 
 def parse_polar_pustelnik(path):
-    """Parse Pustelnik format (angle + HV values)"""
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         raw = f.read()
     raw = raw.lstrip("\ufeff").replace("\r\n", "\n").replace(",", ".")
@@ -166,9 +209,7 @@ def parse_polar_pustelnik(path):
         df = df.dropna(subset=["angle_deg", "HV"]).reset_index(drop=True)
         return {"angle_deg": df["angle_deg"], "HV": df["HV"]}
 
-
 def parse_theta_phi_file(path):
-    """Parse Theta/Phi files with format: Theta [deg], Phi [deg], Abs(Dir.)[dBi]"""
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         raw = f.read()
     
