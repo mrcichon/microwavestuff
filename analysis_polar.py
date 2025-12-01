@@ -2,20 +2,45 @@ import numpy as np
 import pandas as pd
 
 def extract_theta_phi_series(df, tol=2.0):
-    """Extract theta/phi series with automatic phi detection and mirroring"""
-    
-    theta_raw = df["theta_deg"].to_numpy()
-    theta_normalized = theta_raw % 360.0
-    
-    df = df.copy()
-    df["theta_deg"] = theta_normalized
-    df = df.sort_values("theta_deg").reset_index(drop=True)
-    
-    theta = df["theta_deg"].to_numpy()
-    db = df["dir_dbi"].to_numpy()
+    """Extract theta/phi series with automatic phi detection and stitching"""
     
     phi_vals = df["phi_deg"].unique()
-    used = f"phi={phi_vals[0]:.0f}" if len(phi_vals) == 1 else f"phi={phi_vals}"
+    
+    if len(phi_vals) == 1:
+        theta = df["theta_deg"].to_numpy()
+        db = df["dir_dbi"].to_numpy()
+        order = np.argsort(theta)
+        theta, db = theta[order], db[order]
+        used = f"phi={phi_vals[0]:.0f}"
+    elif len(phi_vals) == 2:
+        phi_a, phi_b = sorted(phi_vals)
+        if abs(phi_b - phi_a - 180) < tol:
+            df_a = df[df["phi_deg"] == phi_a].copy()
+            df_b = df[df["phi_deg"] == phi_b].copy()
+            
+            theta_a = df_a["theta_deg"].to_numpy()
+            db_a = df_a["dir_dbi"].to_numpy()
+            
+            theta_b = 360.0 - df_b["theta_deg"].to_numpy()
+            db_b = df_b["dir_dbi"].to_numpy()
+            
+            theta = np.concatenate([theta_a, theta_b])
+            db = np.concatenate([db_a, db_b])
+            order = np.argsort(theta)
+            theta, db = theta[order], db[order]
+            used = f"phi={phi_a:.0f}+{phi_b:.0f}"
+        else:
+            theta = df["theta_deg"].to_numpy()
+            db = df["dir_dbi"].to_numpy()
+            order = np.argsort(theta)
+            theta, db = theta[order], db[order]
+            used = f"phi={phi_vals}"
+    else:
+        theta = df["theta_deg"].to_numpy()
+        db = df["dir_dbi"].to_numpy()
+        order = np.argsort(theta)
+        theta, db = theta[order], db[order]
+        used = f"phi={len(phi_vals)} vals"
     
     if len(theta) > 1 and abs(theta[-1] - 360.0) > 1.0:
         theta = np.append(theta, 360.0)
