@@ -89,6 +89,7 @@ class App(tk.Tk):
         ttk.Button(lfrm, text="Dodaj pliki", command=self._addFiles).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Usuń wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Usuń zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="Deselect all", command=self._deselectAll).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Average files", command=self._avgFiles).pack(anchor="w", pady=(0,10))
         
         ttk.Checkbutton(lfrm, text="Show legend panel", variable=self.legendVisible,
@@ -639,6 +640,11 @@ class App(tk.Tk):
             self._updAll()
             messagebox.showinfo("Files removed", f"Removed {len(toDelete)} items from the list")
     
+    def _deselectAll(self):
+        for v, p, d in self.fls:
+            v.set(False)
+        self._updAll()
+    
     def _avgFiles(self):
         dialog = tk.Toplevel(self)
         dialog.title("Average S-parameter files")
@@ -1049,7 +1055,7 @@ class App(tk.Tk):
             is_time_domain = 'time' in xlabel and any(unit_str in xlabel for unit_str in ['ns', 'ms', 'us', 'ps', ' s]', '[s]'])
             
             if is_time_domain:
-                time_unit = 'ns' if 'ns' in xlabel else ('ms' if 'ms' in xlabel else ('μs' if 'us' in xlabel else 's'))
+                time_unit = 'ns' if 'ns' in xlabel else ('ms' if 'ms' in xlabel else ('Î¼s' if 'us' in xlabel else 's'))
                 annotation_text = f"{round(xf,3)} {time_unit}\n{round(yf,2)} {unit}"
                 marker_text = f"{lbl}: {round(xf,3)} {time_unit}  |  {round(yf,2)} {unit}\n"
             else:
@@ -1182,7 +1188,7 @@ class App(tk.Tk):
         overlay_menu = tk.Menu(menu, tearoff=0)
         for param in ['s11', 's21', 's12', 's22']:
             overlay_menu.add_command(
-                label=f"{'âœ“ ' if param in file_data['overlay_params'] else '  '}{param.upper()}",
+                label=f"{'Ã¢Å“â€œ ' if param in file_data['overlay_params'] else '  '}{param.upper()}",
                 command=lambda p=param: self._toggleOverlayParam(filepath, p)
             )
         menu.add_cascade(label="Add to Overlay", menu=overlay_menu)
@@ -1239,7 +1245,7 @@ class App(tk.Tk):
         ttk.Label(dialog, text="Preview:").grid(row=5, column=0, padx=10, pady=(15,5), sticky="w")
         previewFrame = ttk.Frame(dialog, relief=tk.SUNKEN, borderwidth=2)
         previewFrame.grid(row=5, column=1, padx=10, pady=(15,5), sticky="ew")
-        previewLabel = tk.Label(previewFrame, text="━━━", font=("", 14), background="white")
+        previewLabel = tk.Label(previewFrame, text="â”â”â”", font=("", 14), background="white")
         previewLabel.pack(padx=20, pady=10)
         
         def updatePreview(*args):
