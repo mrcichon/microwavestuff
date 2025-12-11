@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog
+from tkinter import ttk, filedialog, messagebox
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
@@ -15,6 +15,7 @@ class TabField:
         self.canvas = canvas
         
         self.layers = None
+        self.meta = None
         self.global_stats = None
         self.current_layer = 0
         self.text_annotations = []
@@ -59,18 +60,8 @@ class TabField:
         if not filepath:
             return
         
-        rows = simpledialog.askinteger("Grid dimensions", "Rows per layer:", 
-                                        initialvalue=10, minvalue=1)
-        if not rows:
-            return
-        
-        cols = simpledialog.askinteger("Grid dimensions", "Columns per layer:",
-                                        initialvalue=11, minvalue=1)
-        if not cols:
-            return
-        
         try:
-            self.layers = load_field_csv(filepath, rows, cols)
+            self.layers, self.meta = load_field_csv(filepath)
             self.global_stats = compute_global_stats(self.layers)
             self.current_layer = 0
             
@@ -124,7 +115,12 @@ class TabField:
         abs_max = self.global_stats['abs_max']
         if abs_max == 0:
             abs_max = 1
-        normalized = np.abs(layer) / abs_max
+        
+        global_min = self.global_stats['min']
+        global_range = self.global_stats['range']
+        if global_range == 0:
+            global_range = 1
+        normalized = (layer - global_min) / global_range
         
         im = self.ax.imshow(normalized, cmap=self.cmap, vmin=0, vmax=1,
                            aspect='auto', origin='upper')
@@ -134,17 +130,36 @@ class TabField:
                 val = layer[i, j]
                 brightness = normalized[i, j]
                 text_color = 'white' if brightness < 0.5 else 'black'
-                ann = self.ax.text(j, i, f'{val:.3f}', ha='center', va='center',
+                ann = self.ax.text(j, i, f'{val:.2f}', ha='center', va='center',
                                   fontsize=7, color=text_color, fontweight='bold')
                 self.text_annotations.append(ann)
         
-        self.ax.set_xticks(range(cols))
-        self.ax.set_yticks(range(rows))
-        self.ax.set_xlabel('X')
-        self.ax.set_ylabel('Y')
-        self.ax.set_title(f'Layer {self.current_layer}')
+        x_labels = self.meta.get('x_labels')
+        y_labels = self.meta.get('y_labels')
+        z_values = self.meta.get('z_values', [])
         
-        self.layer_label.configure(text=f"({self.current_layer} / {n_layers - 1})")
+        if x_labels and len(x_labels) == cols:
+            self.ax.set_xticks(range(cols))
+            self.ax.set_xticklabels([f'{x:.0f}' for x in x_labels])
+        else:
+            self.ax.set_xticks(range(cols))
+        
+        if y_labels and len(y_labels) == rows:
+            self.ax.set_yticks(range(rows))
+            self.ax.set_yticklabels([f'{y:.0f}' for y in y_labels])
+        else:
+            self.ax.set_yticks(range(rows))
+        
+        self.ax.set_xlabel('X [mm]')
+        self.ax.set_ylabel('Y [mm]')
+        
+        if z_values and self.current_layer < len(z_values):
+            z_val = z_values[self.current_layer]
+            self.ax.set_title(f'Layer {self.current_layer} (z = {z_val:.1f} mm)')
+            self.layer_label.configure(text=f"({self.current_layer} / {n_layers - 1}) z={z_val:.1f}mm")
+        else:
+            self.ax.set_title(f'Layer {self.current_layer}')
+            self.layer_label.configure(text=f"({self.current_layer} / {n_layers - 1})")
         
         self.fig.tight_layout()
         self.canvas.draw()
