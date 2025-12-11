@@ -22,6 +22,7 @@ from ui_tab_integrate import TabIntegrate
 from ui_tab_td_analysis import TabTDAnalysis
 from ui_tab_polar import TabPolar
 from ui_tab_rozpierdol import TabRozpierdol as TabOverlay
+from ui_tab_field import TabField
 
 try:
     from ui_tab_ml import TabMLTraining
@@ -150,6 +151,7 @@ class App(tk.Tk):
             self._create_ml_tab()
         self._create_polar_tab()
         self._create_overlay_tab()
+        self._create_field_tab()
     
     def _create_freq_tab(self):
         frmF = ttk.Frame(self.nb)
@@ -564,6 +566,29 @@ class App(tk.Tk):
         self.cvOverlay.mpl_connect('button_press_event', self._onClick)
         self.cvOverlay.mpl_connect('pick_event', self._onPick)
 
+
+    def _create_field_tab(self):
+        frmFLD = ttk.Frame(self.nb)
+        self.nb.add(frmFLD, text="Field Heatmap")
+        
+        self.figFLD, self.axFLD = plt.subplots(figsize=(10, 8))
+        self.cvFLD = FigureCanvasTkAgg(self.figFLD, master=frmFLD)
+        self.cvFLD.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        self.tbFLD = NavigationToolbar2Tk(self.cvFLD, frmFLD)
+        self.tbFLD.update()
+        self.tbFLD.pack(fill=tk.X)
+        
+        control_frame_FLD = ttk.Frame(frmFLD)
+        control_frame_FLD.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        self.tab_field = TabField(
+            parent=frmFLD,
+            control_frame=control_frame_FLD,
+            fig=self.figFLD,
+            ax=self.axFLD,
+            canvas=self.cvFLD
+        )
 
     def get_files(self):
         return self.fls
