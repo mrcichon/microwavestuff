@@ -37,6 +37,9 @@ class TabRegex:
         self.regex_gate_center = tk.DoubleVar(value=5.0)
         self.regex_gate_span = tk.DoubleVar(value=0.5)
         self.regex_phase = tk.BooleanVar(value=False)
+
+        self.regex_envelope = tk.BooleanVar(value=False)
+        self.regex_envelope_win = tk.IntVar(value=31)  
         
         self.regex_ranges = []
         self.regex_spans = []
@@ -104,6 +107,15 @@ class TabRegex:
         small_ref_entry.pack(side=tk.LEFT, padx=2)
         small_ref_entry.bind("<Return>", lambda e: self.update())
         ttk.Label(frame2, text="dB").pack(side=tk.LEFT, padx=(0,10))
+
+        ttk.Separator(frame2, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
+
+        ttk.Checkbutton(frame2, text="Envelope",
+                       variable=self.regex_envelope, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Label(frame2, text="Win:").pack(side=tk.LEFT, padx=(5,2))
+        env_win_entry = ttk.Entry(frame2, textvariable=self.regex_envelope_win, width=5)
+        env_win_entry.pack(side=tk.LEFT, padx=2)
+        env_win_entry.bind("<Return>", lambda e: self.update())
         
         ttk.Separator(frame2, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
@@ -128,6 +140,38 @@ class TabRegex:
     def _set_pattern(self, pattern):
         self.regex_pattern.set(pattern)
         self.update()
+
+    def _smooth_trace(self, y: np.ndarray) -> np.ndarray:
+        try:
+            win = int(self.regex_envelope_win.get())
+        except Exception:
+            win = 31
+
+        y = np.asarray(y, dtype=float)
+        n = y.size
+        if n == 0:
+            return y
+
+        win = max(3, min(win, n))
+
+        if win % 2 == 0:
+            win -= 1
+        if win < 3:
+            return y
+
+        pad = win // 2
+        y_pad = np.pad(y, (pad, pad), mode="edge")
+        kernel = np.ones(win, dtype=float) / float(win)
+        out = np.convolve(y_pad, kernel, mode="valid")  
+
+        if out.size > n:
+            out = out[:n]
+        elif out.size < n:
+            out = np.pad(out, (0, n - out.size), mode="edge")
+
+        return out
+
+
     
     def _get_files_data(self):
         fmin, fmax, sstr = self.get_freq_range()
@@ -229,7 +273,14 @@ class TabRegex:
             if file_dict.get('line_width', 1.0) != 1.0:
                 kwargs['linewidth'] = file_dict['line_width']
             
-            line = ax.plot(freq, s_data, **kwargs)[0]
+            y_plot = s_data
+            if self.regex_envelope.get():
+                try:
+                    y_plot = self._smooth_trace(s_data)
+                except Exception:
+                    y_plot = s_data
+
+            line = ax.plot(freq, y_plot, **kwargs)[0]
             legend_items.append((fname, matplotlib.colors.to_hex(line.get_color())))
         
         for span in self.regex_spans:
