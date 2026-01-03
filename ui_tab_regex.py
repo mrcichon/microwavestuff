@@ -147,10 +147,10 @@ class TabRegex:
             
             if not v.get() or value is None:
                 continue
-            
             ext = Path(p).suffix.lower()
-            
-            if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
+            is_touchstone = re.match(r"\.s\d+p$", ext) is not None
+
+            if d.get('is_average', False) or is_touchstone or ext == ".csv":
                 try:
                     from sparams_io import loadFile
                     
