@@ -23,6 +23,7 @@ from ui_tab_td_analysis import TabTDAnalysis
 from ui_tab_polar import TabPolar
 from ui_tab_rozpierdol import TabRozpierdol as TabOverlay
 from ui_tab_field import TabField
+from ui_tab_diff import TabDiff
 
 try:
     from ui_tab_ml import TabMLTraining
@@ -77,7 +78,7 @@ class App(tk.Tk):
         
         ffrm = ttk.Frame(lfrm)
         ffrm.pack(anchor="w", pady=(10,0))
-        ttk.Label(ffrm, text="Zakres f [GHz]:").pack(side=tk.LEFT)
+        ttk.Label(ffrm, text="Freq range [GHz]:").pack(side=tk.LEFT)
         ttk.Label(ffrm, text="Od").pack(side=tk.LEFT, padx=(5,0))
         ent1 = ttk.Entry(ffrm, textvariable=self.fmin, width=6)
         ent1.pack(side=tk.LEFT, padx=(2,10))
@@ -87,9 +88,9 @@ class App(tk.Tk):
         ent2.pack(side=tk.LEFT, padx=(2,10))
         self._validateNumeric(ent2, self.fmax, self._updAll)
         
-        ttk.Button(lfrm, text="Dodaj pliki", command=self._addFiles).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="Usuń wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="Usuń zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="Add files", command=self._addFiles).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="Clear all markers", command=self._clearM).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="Delete selected files", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Deselect all", command=self._deselectAll).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Average files", command=self._avgFiles).pack(anchor="w", pady=(0,10))
         
@@ -152,6 +153,7 @@ class App(tk.Tk):
         self._create_polar_tab()
         self._create_overlay_tab()
         self._create_field_tab()
+        self._create_diff_tab()
     
     def _create_freq_tab(self):
         frmF = ttk.Frame(self.nb)
@@ -590,6 +592,62 @@ class App(tk.Tk):
             canvas=self.cvFLD
         )
 
+    def _create_diff_tab(self):
+        frmDiff = ttk.Frame(self.nb)
+        self.nb.add(frmDiff, text="Difference")
+        
+        control_frame_Diff = ttk.Frame(frmDiff)
+        control_frame_Diff.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        self.plotPaneDiff = ttk.PanedWindow(frmDiff, orient=tk.HORIZONTAL)
+        self.plotPaneDiff.pack(fill=tk.BOTH, expand=True)
+        
+        plotFrame = ttk.Frame(self.plotPaneDiff)
+        self.plotPaneDiff.add(plotFrame, weight=3)
+        
+        self.figDiff = plt.figure(figsize=(10,7))
+        self.cvDiff = FigureCanvasTkAgg(self.figDiff, master=plotFrame)
+        canvas_widget = self.cvDiff.get_tk_widget()
+        
+        toolbar_frame = ttk.Frame(plotFrame)
+        toolbar_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        self.tbDiff = NavigationToolbar2Tk(self.cvDiff, toolbar_frame)
+        self.tbDiff.update()
+        self.tbDiff.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+        
+        self.legendFrameDiff = ttk.Frame(self.plotPaneDiff)
+        self.plotPaneDiff.add(self.legendFrameDiff, weight=1)
+        ttk.Label(self.legendFrameDiff, text="Legend", font=("", 10, "bold")).pack(pady=5)
+        
+        legendScrollDiff = ttk.Scrollbar(self.legendFrameDiff)
+        legendScrollDiff.pack(side=tk.RIGHT, fill=tk.Y)
+        self.legendCanvasDiff = tk.Canvas(self.legendFrameDiff, yscrollcommand=legendScrollDiff.set, width=150)
+        self.legendCanvasDiff.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        legendScrollDiff.config(command=self.legendCanvasDiff.yview)
+        
+        self.legendItemsFrameDiff = ttk.Frame(self.legendCanvasDiff)
+        self.legendCanvasDiff.create_window((0,0), window=self.legendItemsFrameDiff, anchor="nw")
+        
+        def updateLegendScrollDiff(event=None):
+            self.legendCanvasDiff.configure(scrollregion=self.legendCanvasDiff.bbox("all"))
+        self.legendItemsFrameDiff.bind("<Configure>", updateLegendScrollDiff)
+        
+        if not self.legendVisible.get():
+            self.plotPaneDiff.forget(self.legendFrameDiff)
+        
+        self.tab_diff = TabDiff(
+            parent=frmDiff,
+            control_frame=control_frame_Diff,
+            fig=self.figDiff,
+            canvas=self.cvDiff,
+            legend_frame=self.legendItemsFrameDiff,
+            legend_canvas=self.legendCanvasDiff,
+            get_files_func=self.get_files,
+            get_freq_range_func=self.get_freq_range,
+            get_legend_on_plot_func=lambda: self.legendOnPlot.get()
+        )
+
     def get_files(self):
         return self.fls
     
@@ -604,10 +662,10 @@ class App(tk.Tk):
     
     def _addFiles(self):
         pth = filedialog.askopenfilenames(
-            title="Wybierz pliki Touchstone (.sNp, .s1p, .csv)",
+            title="Select Touchstone files (.sNp, .s1p, .csv)",
             filetypes=[
-                ("Dane S-Param", "*.s1p *.s2p *.s3p *.csv"),
-                ("Wszystkie pliki", "*.*")
+                ("S-Param files", "*.s1p *.s2p *.s3p *.csv"),
+                ("All files", "*.*")
             ]
         )
         for p in pth:
@@ -998,6 +1056,7 @@ class App(tk.Tk):
             "TD Analysis": self.tab_td_analysis,
             "Polar Plots": self.tab_polar,
             "S-Param Overlay": self.tab_overlay,
+            "Difference": self.tab_diff,
         }
         if ML_AVAILABLE:
             tab_map["Model Training"] = self.tab_ml
@@ -1080,7 +1139,7 @@ class App(tk.Tk):
             is_time_domain = 'time' in xlabel and any(unit_str in xlabel for unit_str in ['ns', 'ms', 'us', 'ps', ' s]', '[s]'])
             
             if is_time_domain:
-                time_unit = 'ns' if 'ns' in xlabel else ('ms' if 'ms' in xlabel else ('Î¼s' if 'us' in xlabel else 's'))
+                time_unit = 'ns' if 'ns' in xlabel else ('ms' if 'ms' in xlabel else ('us' if 'us' in xlabel else 's'))
                 annotation_text = f"{round(xf,3)} {time_unit}\n{round(yf,2)} {unit}"
                 marker_text = f"{lbl}: {round(xf,3)} {time_unit}  |  {round(yf,2)} {unit}\n"
             else:
@@ -1187,11 +1246,13 @@ class App(tk.Tk):
             self.plotPaneT.add(self.legendFrameT, weight=1)
             self.plotPaneR.add(self.legendFrameR, weight=1)
             self.plotPaneOverlay.add(self.legendFrameOverlay, weight=1)
+            self.plotPaneDiff.add(self.legendFrameDiff, weight=1)
         else:
             self.plotPaneF.forget(self.legendFrameF)
             self.plotPaneT.forget(self.legendFrameT)
             self.plotPaneR.forget(self.legendFrameR)
             self.plotPaneOverlay.forget(self.legendFrameOverlay)
+            self.plotPaneDiff.forget(self.legendFrameDiff)
     
     def _showStyleMenu(self, event, filepath):
         file_data = None
@@ -1213,7 +1274,7 @@ class App(tk.Tk):
         overlay_menu = tk.Menu(menu, tearoff=0)
         for param in ['s11', 's21', 's12', 's22']:
             overlay_menu.add_command(
-                label=f"{'Ã¢Å“â€œ ' if param in file_data['overlay_params'] else '  '}{param.upper()}",
+                label=f"{'* ' if param in file_data['overlay_params'] else '  '}{param.upper()}",
                 command=lambda p=param: self._toggleOverlayParam(filepath, p)
             )
         menu.add_cascade(label="Add to Overlay", menu=overlay_menu)
@@ -1270,7 +1331,7 @@ class App(tk.Tk):
         ttk.Label(dialog, text="Preview:").grid(row=5, column=0, padx=10, pady=(15,5), sticky="w")
         previewFrame = ttk.Frame(dialog, relief=tk.SUNKEN, borderwidth=2)
         previewFrame.grid(row=5, column=1, padx=10, pady=(15,5), sticky="ew")
-        previewLabel = tk.Label(previewFrame, text="â”â”â”", font=("", 14), background="white")
+        previewLabel = tk.Label(previewFrame, text="---", font=("", 14), background="white")
         previewLabel.pack(padx=20, pady=10)
         
         def updatePreview(*args):
