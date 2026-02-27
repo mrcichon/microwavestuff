@@ -23,7 +23,6 @@ from ui_tab_td_analysis import TabTDAnalysis
 from ui_tab_polar import TabPolar
 from ui_tab_rozpierdol import TabRozpierdol as TabOverlay
 from ui_tab_field import TabField
-from ui_tab_diff import TabDiff
 
 try:
     from ui_tab_ml import TabMLTraining
@@ -78,7 +77,7 @@ class App(tk.Tk):
         
         ffrm = ttk.Frame(lfrm)
         ffrm.pack(anchor="w", pady=(10,0))
-        ttk.Label(ffrm, text="Freq range [GHz]:").pack(side=tk.LEFT)
+        ttk.Label(ffrm, text="Zakres f [GHz]:").pack(side=tk.LEFT)
         ttk.Label(ffrm, text="Od").pack(side=tk.LEFT, padx=(5,0))
         ent1 = ttk.Entry(ffrm, textvariable=self.fmin, width=6)
         ent1.pack(side=tk.LEFT, padx=(2,10))
@@ -88,9 +87,9 @@ class App(tk.Tk):
         ent2.pack(side=tk.LEFT, padx=(2,10))
         self._validateNumeric(ent2, self.fmax, self._updAll)
         
-        ttk.Button(lfrm, text="Add files", command=self._addFiles).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="Clear all markers", command=self._clearM).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="Delete selected files", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="Dodaj pliki", command=self._addFiles).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="Usuń wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="Usuń zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Deselect all", command=self._deselectAll).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Average files", command=self._avgFiles).pack(anchor="w", pady=(0,10))
         
@@ -100,7 +99,14 @@ class App(tk.Tk):
                        command=self._updAll).pack(anchor="w", pady=(0,10))
         ttk.Checkbutton(lfrm, text="dB scale", variable=self.use_db_scale,
                        command=self._updAll).pack(anchor="w", pady=(0,10))
-        ttk.Checkbutton(lfrm, text="Enable markers", variable=self.markers_enabled).pack(anchor="w", pady=(0,10))
+        ttk.Checkbutton(lfrm, text="Enable markers", variable=self.markers_enabled).pack(anchor="w", pady=(0,5))
+        
+        mfrm = ttk.Frame(lfrm)
+        mfrm.pack(anchor="w", pady=(0,10))
+        ttk.Label(mfrm, text="f [GHz]:").pack(side=tk.LEFT)
+        self.marker_freq = tk.DoubleVar(value=1.0)
+        ttk.Entry(mfrm, textvariable=self.marker_freq, width=8).pack(side=tk.LEFT, padx=(2,5))
+        ttk.Button(mfrm, text="Place", command=self._placeMarkerDialog).pack(side=tk.LEFT)
         
         fileListFrame = ttk.Frame(lfrm)
         fileListFrame.pack(anchor="w", fill=tk.BOTH, pady=(0,10))
@@ -153,7 +159,6 @@ class App(tk.Tk):
         self._create_polar_tab()
         self._create_overlay_tab()
         self._create_field_tab()
-        self._create_diff_tab()
     
     def _create_freq_tab(self):
         frmF = ttk.Frame(self.nb)
@@ -592,62 +597,6 @@ class App(tk.Tk):
             canvas=self.cvFLD
         )
 
-    def _create_diff_tab(self):
-        frmDiff = ttk.Frame(self.nb)
-        self.nb.add(frmDiff, text="Difference")
-        
-        control_frame_Diff = ttk.Frame(frmDiff)
-        control_frame_Diff.pack(side=tk.BOTTOM, fill=tk.X)
-        
-        self.plotPaneDiff = ttk.PanedWindow(frmDiff, orient=tk.HORIZONTAL)
-        self.plotPaneDiff.pack(fill=tk.BOTH, expand=True)
-        
-        plotFrame = ttk.Frame(self.plotPaneDiff)
-        self.plotPaneDiff.add(plotFrame, weight=3)
-        
-        self.figDiff = plt.figure(figsize=(10,7))
-        self.cvDiff = FigureCanvasTkAgg(self.figDiff, master=plotFrame)
-        canvas_widget = self.cvDiff.get_tk_widget()
-        
-        toolbar_frame = ttk.Frame(plotFrame)
-        toolbar_frame.pack(side=tk.BOTTOM, fill=tk.X)
-        self.tbDiff = NavigationToolbar2Tk(self.cvDiff, toolbar_frame)
-        self.tbDiff.update()
-        self.tbDiff.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
-        
-        self.legendFrameDiff = ttk.Frame(self.plotPaneDiff)
-        self.plotPaneDiff.add(self.legendFrameDiff, weight=1)
-        ttk.Label(self.legendFrameDiff, text="Legend", font=("", 10, "bold")).pack(pady=5)
-        
-        legendScrollDiff = ttk.Scrollbar(self.legendFrameDiff)
-        legendScrollDiff.pack(side=tk.RIGHT, fill=tk.Y)
-        self.legendCanvasDiff = tk.Canvas(self.legendFrameDiff, yscrollcommand=legendScrollDiff.set, width=150)
-        self.legendCanvasDiff.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        legendScrollDiff.config(command=self.legendCanvasDiff.yview)
-        
-        self.legendItemsFrameDiff = ttk.Frame(self.legendCanvasDiff)
-        self.legendCanvasDiff.create_window((0,0), window=self.legendItemsFrameDiff, anchor="nw")
-        
-        def updateLegendScrollDiff(event=None):
-            self.legendCanvasDiff.configure(scrollregion=self.legendCanvasDiff.bbox("all"))
-        self.legendItemsFrameDiff.bind("<Configure>", updateLegendScrollDiff)
-        
-        if not self.legendVisible.get():
-            self.plotPaneDiff.forget(self.legendFrameDiff)
-        
-        self.tab_diff = TabDiff(
-            parent=frmDiff,
-            control_frame=control_frame_Diff,
-            fig=self.figDiff,
-            canvas=self.cvDiff,
-            legend_frame=self.legendItemsFrameDiff,
-            legend_canvas=self.legendCanvasDiff,
-            get_files_func=self.get_files,
-            get_freq_range_func=self.get_freq_range,
-            get_legend_on_plot_func=lambda: self.legendOnPlot.get()
-        )
-
     def get_files(self):
         return self.fls
     
@@ -662,10 +611,10 @@ class App(tk.Tk):
     
     def _addFiles(self):
         pth = filedialog.askopenfilenames(
-            title="Select Touchstone files (.sNp, .s1p, .csv)",
+            title="Wybierz pliki Touchstone (.sNp, .s1p, .csv)",
             filetypes=[
-                ("S-Param files", "*.s1p *.s2p *.s3p *.csv"),
-                ("All files", "*.*")
+                ("Dane S-Param", "*.s1p *.s2p *.s3p *.csv"),
+                ("Wszystkie pliki", "*.*")
             ]
         )
         for p in pth:
@@ -1056,7 +1005,6 @@ class App(tk.Tk):
             "TD Analysis": self.tab_td_analysis,
             "Polar Plots": self.tab_polar,
             "S-Param Overlay": self.tab_overlay,
-            "Difference": self.tab_diff,
         }
         if ML_AVAILABLE:
             tab_map["Model Training"] = self.tab_ml
@@ -1097,6 +1045,84 @@ class App(tk.Tk):
         self._update_text_panel()
         if self.current_tab and hasattr(self.current_tab, 'canvas'):
             self.current_tab.canvas.draw()
+    
+    def _placeMarkerDialog(self):
+        if not self.current_tab or not hasattr(self.current_tab, 'fig'):
+            return
+        
+        freq_hz = self.marker_freq.get() * 1e9
+        
+        lines = []
+        for ax in self.current_tab.fig.get_axes():
+            for ln in ax.get_lines():
+                lbl = ln.get_label()
+                if lbl.startswith('_'):
+                    continue
+                xd = ln.get_xdata()
+                if len(xd) == 0:
+                    continue
+                if xd.min() <= freq_hz <= xd.max():
+                    lines.append((ax, ln, lbl))
+        
+        if not lines:
+            messagebox.showinfo("Place marker", "No lines contain this frequency.")
+            return
+        
+        dialog = tk.Toplevel(self)
+        dialog.title("Place marker")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        ttk.Label(dialog, text=f"Place marker at {self.marker_freq.get()} GHz on:",
+                  font=("", 10, "bold")).pack(pady=10, padx=10)
+        
+        checks = []
+        for ax, ln, lbl in lines:
+            var = tk.BooleanVar(value=True)
+            ttk.Checkbutton(dialog, text=lbl, variable=var).pack(anchor="w", padx=20)
+            checks.append((var, ax, ln))
+        
+        def place():
+            use_db = self.get_scale_mode()
+            unit = "dB" if use_db else "mag"
+            for var, ax, ln in checks:
+                if not var.get():
+                    continue
+                xd = np.array(ln.get_xdata())
+                yd = np.array(ln.get_ydata())
+                idx = np.argmin(np.abs(xd - freq_hz))
+                xf = float(xd[idx])
+                yf = float(yd[idx])
+                col = ln.get_color()
+                lbl = ln.get_label()
+                
+                m, = ax.plot([xf], [yf], 'o', color=col, markersize=9)
+                annotation_text = f"{round(xf/1e9,4)} GHz\n{round(yf,2)} {unit}"
+                marker_text = f"{lbl}: {round(xf/1e9,4)} GHz  |  {round(yf,2)} {unit}\n"
+                t = ax.annotate(
+                    annotation_text,
+                    xy=(xf, yf), xytext=(10, 20),
+                    textcoords="offset points",
+                    bbox=dict(boxstyle="round,pad=0.2", fc="yellow", alpha=0.5),
+                    arrowprops=dict(arrowstyle="->", color=col, lw=1.5),
+                    fontsize=9
+                )
+                self.mrk.append({'marker': m, 'text': t, 'ax': ax})
+                self.mtxt.append(marker_text)
+            
+            self._update_text_panel()
+            self.current_tab.canvas.draw()
+            dialog.destroy()
+        
+        btnfrm = ttk.Frame(dialog)
+        btnfrm.pack(pady=10)
+        ttk.Button(btnfrm, text="OK", command=place).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btnfrm, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
     
     def _onClick(self, ev):
         if not self.markers_enabled.get():
@@ -1246,13 +1272,11 @@ class App(tk.Tk):
             self.plotPaneT.add(self.legendFrameT, weight=1)
             self.plotPaneR.add(self.legendFrameR, weight=1)
             self.plotPaneOverlay.add(self.legendFrameOverlay, weight=1)
-            self.plotPaneDiff.add(self.legendFrameDiff, weight=1)
         else:
             self.plotPaneF.forget(self.legendFrameF)
             self.plotPaneT.forget(self.legendFrameT)
             self.plotPaneR.forget(self.legendFrameR)
             self.plotPaneOverlay.forget(self.legendFrameOverlay)
-            self.plotPaneDiff.forget(self.legendFrameDiff)
     
     def _showStyleMenu(self, event, filepath):
         file_data = None
