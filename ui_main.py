@@ -1107,7 +1107,7 @@ class App(tk.Tk):
                     arrowprops=dict(arrowstyle="->", color=col, lw=1.5),
                     fontsize=9
                 )
-                self.mrk.append({'marker': m, 'text': t, 'ax': ax})
+                self.mrk.append({'marker': m, 'text': t, 'ax': ax, 'label': lbl})
                 self.mtxt.append(marker_text)
             
             self._update_text_panel()
@@ -1165,7 +1165,7 @@ class App(tk.Tk):
             is_time_domain = 'time' in xlabel and any(unit_str in xlabel for unit_str in ['ns', 'ms', 'us', 'ps', ' s]', '[s]'])
             
             if is_time_domain:
-                time_unit = 'ns' if 'ns' in xlabel else ('ms' if 'ms' in xlabel else ('us' if 'us' in xlabel else 's'))
+                time_unit = 'ns' if 'ns' in xlabel else ('ms' if 'ms' in xlabel else ('μs' if 'us' in xlabel else 's'))
                 annotation_text = f"{round(xf,3)} {time_unit}\n{round(yf,2)} {unit}"
                 marker_text = f"{lbl}: {round(xf,3)} {time_unit}  |  {round(yf,2)} {unit}\n"
             else:
@@ -1181,7 +1181,7 @@ class App(tk.Tk):
                 fontsize=9
             )
             
-            self.mrk.append({'marker': m, 'text': t, 'ax': axc})
+            self.mrk.append({'marker': m, 'text': t, 'ax': axc, 'label': lbl})
             self.mtxt.append(marker_text)
             self._update_text_panel()
             ev.canvas.draw()
@@ -1202,7 +1202,7 @@ class App(tk.Tk):
                              fontsize=9, color='red', 
                              verticalalignment='bottom')
         
-        self.mrk.append({'marker': marker, 'text': text})
+        self.mrk.append({'marker': marker, 'text': text, 'label': 'variance'})
         marker_info = f"Variance marker: freq={x:.3e} Hz, variance={y:.3e}\n"
         self.mtxt.append(marker_info)
         
@@ -1261,7 +1261,7 @@ class App(tk.Tk):
                 fontsize=9
             )
             
-            self.mrk.append({'marker': m, 'text': t, 'ax': axc})
+            self.mrk.append({'marker': m, 'text': t, 'ax': axc, 'label': lbl})
             self.mtxt.append(marker_text)
             self._update_text_panel()
             ev.canvas.draw()
@@ -1298,14 +1298,64 @@ class App(tk.Tk):
         overlay_menu = tk.Menu(menu, tearoff=0)
         for param in ['s11', 's21', 's12', 's22']:
             overlay_menu.add_command(
-                label=f"{'* ' if param in file_data['overlay_params'] else '  '}{param.upper()}",
+                label=f"{'✓ ' if param in file_data['overlay_params'] else '  '}{param.upper()}",
                 command=lambda p=param: self._toggleOverlayParam(filepath, p)
             )
         menu.add_cascade(label="Add to Overlay", menu=overlay_menu)
         
+        markers_menu = tk.Menu(menu, tearoff=0)
+        stem = Path(filepath).stem
+        found = []
+        for i, (m, mt) in enumerate(zip(self.mrk, self.mtxt)):
+            if m.get('label') == stem:
+                found.append((i, mt.strip()))
+        if found:
+            for idx, desc in found:
+                markers_menu.add_command(
+                    label=desc,
+                    command=lambda ii=idx: self._deleteOneMarker(ii)
+                )
+            markers_menu.add_separator()
+            markers_menu.add_command(
+                label="Delete all on this line",
+                command=lambda s=stem: self._deleteMarkersForLabel(s)
+            )
+        else:
+            markers_menu.add_command(label="(none)", state="disabled")
+        menu.add_cascade(label="Delete markers", menu=markers_menu)
+        
         menu.add_command(label="Delete", 
                         command=lambda: self._deleteLine(filepath))
         menu.post(event.x_root, event.y_root)
+    
+    def _deleteOneMarker(self, idx):
+        if idx >= len(self.mrk):
+            return
+        m = self.mrk[idx]
+        try:
+            m['marker'].remove()
+            m['text'].remove()
+        except:
+            pass
+        self.mrk.pop(idx)
+        self.mtxt.pop(idx)
+        self._update_text_panel()
+        if self.current_tab and hasattr(self.current_tab, 'canvas'):
+            self.current_tab.canvas.draw()
+    
+    def _deleteMarkersForLabel(self, label):
+        to_remove = [i for i, m in enumerate(self.mrk) if m.get('label') == label]
+        for i in reversed(to_remove):
+            try:
+                self.mrk[i]['marker'].remove()
+                self.mrk[i]['text'].remove()
+            except:
+                pass
+            self.mrk.pop(i)
+            self.mtxt.pop(i)
+        self._update_text_panel()
+        if self.current_tab and hasattr(self.current_tab, 'canvas'):
+            self.current_tab.canvas.draw()
     
     def _editLineStyle(self, filepath, file_data):
         dialog = tk.Toplevel(self)
@@ -1355,7 +1405,7 @@ class App(tk.Tk):
         ttk.Label(dialog, text="Preview:").grid(row=5, column=0, padx=10, pady=(15,5), sticky="w")
         previewFrame = ttk.Frame(dialog, relief=tk.SUNKEN, borderwidth=2)
         previewFrame.grid(row=5, column=1, padx=10, pady=(15,5), sticky="ew")
-        previewLabel = tk.Label(previewFrame, text="---", font=("", 14), background="white")
+        previewLabel = tk.Label(previewFrame, text="███", font=("", 14), background="white")
         previewLabel.pack(padx=20, pady=10)
         
         def updatePreview(*args):
