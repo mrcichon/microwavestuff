@@ -57,7 +57,7 @@ class App(tk.Tk):
         
         self.current_tab = None
         self.marker_data = {}
-        self._tab_fig_canvas = {}
+        self._marker_figs = set()
         
         self.legendVisible = tk.BooleanVar(value=True)
         self.legendOnPlot = tk.BooleanVar(value=False)
@@ -208,8 +208,7 @@ class App(tk.Tk):
         
         self.cvF.mpl_connect('button_press_event', self._onClick)
         self.cvF.mpl_connect('pick_event', self._onPick)
-        self._tab_fig_canvas[self.tab_freq] = (self.figF, self.cvF)
-        self._wrap_tab_update(self.tab_freq)
+        self._hook_marker_redraw(self.figF, self.cvF)
     
     def _create_time_tab(self):
         frmT = ttk.Frame(self.nb)
@@ -270,8 +269,7 @@ class App(tk.Tk):
         
         self.cvT.mpl_connect('button_press_event', self._onClick)
         self.cvT.mpl_connect('pick_event', self._onPick)
-        self._tab_fig_canvas[self.tab_time] = (self.figT, self.cvT)
-        self._wrap_tab_update(self.tab_time)
+        self._hook_marker_redraw(self.figT, self.cvT)
     
     def _create_regex_tab(self):
         frmR = ttk.Frame(self.nb)
@@ -330,8 +328,7 @@ class App(tk.Tk):
         )
         
         self.cvR.mpl_connect('button_press_event', self._onClick)
-        self._tab_fig_canvas[self.tab_regex] = (self.figR, self.cvR)
-        self._wrap_tab_update(self.tab_regex)
+        self._hook_marker_redraw(self.figR, self.cvR)
     
     def _create_overlap_tab(self):
         frmO = ttk.Frame(self.nb)
@@ -387,8 +384,7 @@ class App(tk.Tk):
         self.cvV.mpl_connect('button_press_event', self._onClickVar)
         self.cvV.mpl_connect('pick_event', self._onPickVar)
         self.cvV.mpl_connect('motion_notify_event', self._onMotionVar)
-        self._tab_fig_canvas[self.tab_variance] = (self.figV, self.cvV)
-        self._wrap_tab_update(self.tab_variance)
+        self._hook_marker_redraw(self.figV, self.cvV)
     
     def _create_shape_tab(self):
         frmSC = ttk.Frame(self.nb)
@@ -466,8 +462,7 @@ class App(tk.Tk):
         )
         
         self.cvTDA.mpl_connect('button_press_event', self._onClickTDA)
-        self._tab_fig_canvas[self.tab_td_analysis] = (self.figTDA, self.cvTDA)
-        self._wrap_tab_update(self.tab_td_analysis)
+        self._hook_marker_redraw(self.figTDA, self.cvTDA)
     
     def _create_ml_tab(self):
         frmM = ttk.Frame(self.nb)
@@ -571,8 +566,7 @@ class App(tk.Tk):
         
         self.cvOverlay.mpl_connect('button_press_event', self._onClick)
         self.cvOverlay.mpl_connect('pick_event', self._onPick)
-        self._tab_fig_canvas[self.tab_overlay] = (self.figOverlay, self.cvOverlay)
-        self._wrap_tab_update(self.tab_overlay)
+        self._hook_marker_redraw(self.figOverlay, self.cvOverlay)
 
 
     def _create_field_tab(self):
@@ -598,15 +592,24 @@ class App(tk.Tk):
             canvas=self.cvFLD
         )
 
-    def _wrap_tab_update(self, tab):
-        original = tab.update
-        fig, canvas = self._tab_fig_canvas[tab]
-        def wrapped():
-            original()
-            self._redraw_markers(fig, canvas)
-        tab.update = wrapped
+    def _hook_marker_redraw(self, fig, canvas):
+        fig_key = id(fig)
+        if fig_key in self._marker_figs:
+            return
+        self._marker_figs.add(fig_key)
+        original_draw = canvas.draw
+        in_restore = [False]
 
-    def _redraw_markers(self, fig, canvas):
+        def draw_with_markers():
+            if not in_restore[0]:
+                in_restore[0] = True
+                self._restore_markers_to_axes(fig)
+                in_restore[0] = False
+            original_draw()
+
+        canvas.draw = draw_with_markers
+
+    def _restore_markers_to_axes(self, fig):
         fig_key = id(fig)
         markers = self.marker_data.get(fig_key, [])
         if not markers:
@@ -617,6 +620,16 @@ class App(tk.Tk):
             ax_map[ax.get_title()] = ax
 
         for md in markers:
+            artists_valid = bool(md.get('_artists'))
+            if artists_valid:
+                for a in md['_artists']:
+                    if getattr(a, 'axes', None) is None:
+                        artists_valid = False
+                        break
+
+            if artists_valid:
+                continue
+
             for a in md.get('_artists', []):
                 try:
                     a.remove()
@@ -645,10 +658,10 @@ class App(tk.Tk):
                            fontsize=9, color='red', verticalalignment='bottom')
                 md['_artists'] = [m, t]
 
-        canvas.draw()
-
     def _onRightClickMarker(self, ev):
         if ev.inaxes is None:
+            return
+        if ev.xdata is None or ev.ydata is None:
             return
         fig = ev.canvas.figure
         fig_key = id(fig)
@@ -673,7 +686,9 @@ class App(tk.Tk):
             menu.add_command(label="Delete this marker",
                            command=lambda: self._delete_marker(fig_key, best_idx, ev.canvas))
             menu.add_separator()
-        menu.add_command(label="Delete all markers on this plot",
+        menu.add_command(label="Delete markers on this subplot",
+                        command=lambda: self._clear_markers_on_subplot(fig_key, subplot_key, ev.canvas))
+        menu.add_command(label="Delete all markers on this figure",
                         command=lambda: self._clear_markers_on_fig(fig_key, ev.canvas))
         menu.add_separator()
         menu.add_command(label="Add bulk markers...",
@@ -691,6 +706,22 @@ class App(tk.Tk):
                     pass
             canvas.draw()
             self._update_text_panel()
+
+    def _clear_markers_on_subplot(self, fig_key, subplot_key, canvas):
+        markers = self.marker_data.get(fig_key, [])
+        keep = []
+        for md in markers:
+            if md['subplot_key'] == subplot_key:
+                for a in md.get('_artists', []):
+                    try:
+                        a.remove()
+                    except Exception:
+                        pass
+            else:
+                keep.append(md)
+        self.marker_data[fig_key] = keep
+        canvas.draw()
+        self._update_text_panel()
 
     def _clear_markers_on_fig(self, fig_key, canvas):
         markers = self.marker_data.get(fig_key, [])
@@ -815,7 +846,7 @@ class App(tk.Tk):
 
             val += step_val
 
-        self._redraw_markers(fig, canvas)
+        canvas.draw()
         self._update_text_panel()
 
     def get_files(self):
@@ -1479,7 +1510,7 @@ class App(tk.Tk):
         overlay_menu = tk.Menu(menu, tearoff=0)
         for param in ['s11', 's21', 's12', 's22']:
             overlay_menu.add_command(
-                label=f"{'ok' if param in file_data['overlay_params'] else '  '}{param.upper()}",
+                label=f"{'ok ' if param in file_data['overlay_params'] else '  '}{param.upper()}",
                 command=lambda p=param: self._toggleOverlayParam(filepath, p)
             )
         menu.add_cascade(label="Add to Overlay", menu=overlay_menu)
