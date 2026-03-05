@@ -24,7 +24,11 @@ from ui_tab_polar import TabPolar
 from ui_tab_rozpierdol import TabRozpierdol as TabOverlay
 from ui_tab_field import TabField
 
-ML_AVAILABLE = False
+try:
+    from ui_tab_ml import TabMLTraining
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
 
 class ValidatedDoubleVar(tk.DoubleVar):
     def __init__(self, *args, **kwargs):
@@ -598,16 +602,18 @@ class App(tk.Tk):
             return
         self._marker_figs.add(fig_key)
         original_draw = canvas.draw
+        original_draw_idle = canvas.draw_idle
         in_restore = [False]
 
-        def draw_with_markers():
+        def _restore_then(real_draw):
             if not in_restore[0]:
                 in_restore[0] = True
                 self._restore_markers_to_axes(fig)
                 in_restore[0] = False
-            original_draw()
+            real_draw()
 
-        canvas.draw = draw_with_markers
+        canvas.draw = lambda: _restore_then(original_draw)
+        canvas.draw_idle = lambda: _restore_then(original_draw_idle)
 
     def _restore_markers_to_axes(self, fig):
         fig_key = id(fig)
@@ -1510,7 +1516,7 @@ class App(tk.Tk):
         overlay_menu = tk.Menu(menu, tearoff=0)
         for param in ['s11', 's21', 's12', 's22']:
             overlay_menu.add_command(
-                label=f"{'ok ' if param in file_data['overlay_params'] else '  '}{param.upper()}",
+                label=f"{'ok' if param in file_data['overlay_params'] else '  '}{param.upper()}",
                 command=lambda p=param: self._toggleOverlayParam(filepath, p)
             )
         menu.add_cascade(label="Add to Overlay", menu=overlay_menu)
