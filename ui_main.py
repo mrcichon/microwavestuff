@@ -24,11 +24,7 @@ from ui_tab_polar import TabPolar
 from ui_tab_rozpierdol import TabRozpierdol as TabOverlay
 from ui_tab_field import TabField
 
-try:
-    from ui_tab_ml import TabMLTraining
-    ML_AVAILABLE = True
-except ImportError:
-    ML_AVAILABLE = False
+ML_AVAILABLE = False
 
 class ValidatedDoubleVar(tk.DoubleVar):
     def __init__(self, *args, **kwargs):
@@ -60,8 +56,8 @@ class App(tk.Tk):
         self.avgCounter = 0
         
         self.current_tab = None
-        self.mrk = []
-        self.mtxt = []
+        self.marker_data = {}
+        self._tab_fig_canvas = {}
         
         self.legendVisible = tk.BooleanVar(value=True)
         self.legendOnPlot = tk.BooleanVar(value=False)
@@ -99,14 +95,7 @@ class App(tk.Tk):
                        command=self._updAll).pack(anchor="w", pady=(0,10))
         ttk.Checkbutton(lfrm, text="dB scale", variable=self.use_db_scale,
                        command=self._updAll).pack(anchor="w", pady=(0,10))
-        ttk.Checkbutton(lfrm, text="Enable markers", variable=self.markers_enabled).pack(anchor="w", pady=(0,5))
-        
-        mfrm = ttk.Frame(lfrm)
-        mfrm.pack(anchor="w", pady=(0,10))
-        ttk.Label(mfrm, text="f [GHz]:").pack(side=tk.LEFT)
-        self.marker_freq = tk.DoubleVar(value=1.0)
-        ttk.Entry(mfrm, textvariable=self.marker_freq, width=8).pack(side=tk.LEFT, padx=(2,5))
-        ttk.Button(mfrm, text="Place", command=self._placeMarkerDialog).pack(side=tk.LEFT)
+        ttk.Checkbutton(lfrm, text="Enable markers", variable=self.markers_enabled).pack(anchor="w", pady=(0,10))
         
         fileListFrame = ttk.Frame(lfrm)
         fileListFrame.pack(anchor="w", fill=tk.BOTH, pady=(0,10))
@@ -219,6 +208,8 @@ class App(tk.Tk):
         
         self.cvF.mpl_connect('button_press_event', self._onClick)
         self.cvF.mpl_connect('pick_event', self._onPick)
+        self._tab_fig_canvas[self.tab_freq] = (self.figF, self.cvF)
+        self._wrap_tab_update(self.tab_freq)
     
     def _create_time_tab(self):
         frmT = ttk.Frame(self.nb)
@@ -279,6 +270,8 @@ class App(tk.Tk):
         
         self.cvT.mpl_connect('button_press_event', self._onClick)
         self.cvT.mpl_connect('pick_event', self._onPick)
+        self._tab_fig_canvas[self.tab_time] = (self.figT, self.cvT)
+        self._wrap_tab_update(self.tab_time)
     
     def _create_regex_tab(self):
         frmR = ttk.Frame(self.nb)
@@ -337,6 +330,8 @@ class App(tk.Tk):
         )
         
         self.cvR.mpl_connect('button_press_event', self._onClick)
+        self._tab_fig_canvas[self.tab_regex] = (self.figR, self.cvR)
+        self._wrap_tab_update(self.tab_regex)
     
     def _create_overlap_tab(self):
         frmO = ttk.Frame(self.nb)
@@ -392,6 +387,8 @@ class App(tk.Tk):
         self.cvV.mpl_connect('button_press_event', self._onClickVar)
         self.cvV.mpl_connect('pick_event', self._onPickVar)
         self.cvV.mpl_connect('motion_notify_event', self._onMotionVar)
+        self._tab_fig_canvas[self.tab_variance] = (self.figV, self.cvV)
+        self._wrap_tab_update(self.tab_variance)
     
     def _create_shape_tab(self):
         frmSC = ttk.Frame(self.nb)
@@ -469,6 +466,8 @@ class App(tk.Tk):
         )
         
         self.cvTDA.mpl_connect('button_press_event', self._onClickTDA)
+        self._tab_fig_canvas[self.tab_td_analysis] = (self.figTDA, self.cvTDA)
+        self._wrap_tab_update(self.tab_td_analysis)
     
     def _create_ml_tab(self):
         frmM = ttk.Frame(self.nb)
@@ -572,6 +571,8 @@ class App(tk.Tk):
         
         self.cvOverlay.mpl_connect('button_press_event', self._onClick)
         self.cvOverlay.mpl_connect('pick_event', self._onPick)
+        self._tab_fig_canvas[self.tab_overlay] = (self.figOverlay, self.cvOverlay)
+        self._wrap_tab_update(self.tab_overlay)
 
 
     def _create_field_tab(self):
@@ -596,6 +597,226 @@ class App(tk.Tk):
             ax=self.axFLD,
             canvas=self.cvFLD
         )
+
+    def _wrap_tab_update(self, tab):
+        original = tab.update
+        fig, canvas = self._tab_fig_canvas[tab]
+        def wrapped():
+            original()
+            self._redraw_markers(fig, canvas)
+        tab.update = wrapped
+
+    def _redraw_markers(self, fig, canvas):
+        fig_key = id(fig)
+        markers = self.marker_data.get(fig_key, [])
+        if not markers:
+            return
+
+        ax_map = {}
+        for ax in fig.get_axes():
+            ax_map[ax.get_title()] = ax
+
+        for md in markers:
+            for a in md.get('_artists', []):
+                try:
+                    a.remove()
+                except Exception:
+                    pass
+            md['_artists'] = []
+
+            ax = ax_map.get(md['subplot_key'])
+            if ax is None:
+                continue
+
+            if md['style'] == 'snap':
+                m, = ax.plot([md['x']], [md['y']], 'o', color=md['color'], markersize=9)
+                t = ax.annotate(
+                    md['annotation_text'],
+                    xy=(md['x'], md['y']), xytext=(10, 20),
+                    textcoords="offset points",
+                    bbox=dict(boxstyle="round,pad=0.2", fc="yellow", alpha=0.5),
+                    arrowprops=dict(arrowstyle="->", color=md['color'], lw=1.5),
+                    fontsize=9
+                )
+                md['_artists'] = [m, t]
+            elif md['style'] == 'freeform':
+                m = ax.plot(md['x'], md['y'], 'rx', markersize=10, markeredgewidth=2)[0]
+                t = ax.text(md['x'], md['y'], f'  ({md["x"]:.3e}, {md["y"]:.3e})',
+                           fontsize=9, color='red', verticalalignment='bottom')
+                md['_artists'] = [m, t]
+
+        canvas.draw()
+
+    def _onRightClickMarker(self, ev):
+        if ev.inaxes is None:
+            return
+        fig = ev.canvas.figure
+        fig_key = id(fig)
+        markers = self.marker_data.get(fig_key, [])
+        subplot_key = ev.inaxes.get_title()
+
+        best_idx = None
+        best_dist = float('inf')
+        click_disp = ev.inaxes.transData.transform((ev.xdata, ev.ydata))
+
+        for i, md in enumerate(markers):
+            if md['subplot_key'] != subplot_key:
+                continue
+            md_disp = ev.inaxes.transData.transform((md['x'], md['y']))
+            dist = np.sqrt((click_disp[0] - md_disp[0])**2 + (click_disp[1] - md_disp[1])**2)
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = i
+
+        menu = tk.Menu(self, tearoff=0)
+        if best_idx is not None and best_dist < 50:
+            menu.add_command(label="Delete this marker",
+                           command=lambda: self._delete_marker(fig_key, best_idx, ev.canvas))
+            menu.add_separator()
+        menu.add_command(label="Delete all markers on this plot",
+                        command=lambda: self._clear_markers_on_fig(fig_key, ev.canvas))
+        menu.add_separator()
+        menu.add_command(label="Add bulk markers...",
+                        command=lambda: self._bulk_markers_dialog(fig, ev.canvas))
+        menu.post(ev.guiEvent.x_root, ev.guiEvent.y_root)
+
+    def _delete_marker(self, fig_key, idx, canvas):
+        markers = self.marker_data.get(fig_key, [])
+        if idx < len(markers):
+            md = markers.pop(idx)
+            for a in md.get('_artists', []):
+                try:
+                    a.remove()
+                except Exception:
+                    pass
+            canvas.draw()
+            self._update_text_panel()
+
+    def _clear_markers_on_fig(self, fig_key, canvas):
+        markers = self.marker_data.get(fig_key, [])
+        for md in markers:
+            for a in md.get('_artists', []):
+                try:
+                    a.remove()
+                except Exception:
+                    pass
+        self.marker_data[fig_key] = []
+        canvas.draw()
+        self._update_text_panel()
+
+    def _bulk_markers_dialog(self, fig, canvas):
+        dialog = tk.Toplevel(self)
+        dialog.title("Add bulk markers")
+        dialog.geometry("350x280")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        subplot_keys = [ax.get_title() for ax in fig.get_axes() if ax.get_title()]
+
+        ttk.Label(dialog, text="Subplot:").grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        subplot_var = tk.StringVar(value=subplot_keys[0] if subplot_keys else "")
+        combo = ttk.Combobox(dialog, textvariable=subplot_var, values=subplot_keys, state="readonly", width=25)
+        combo.grid(row=0, column=1, padx=10, pady=5)
+
+        unit_label = ttk.Label(dialog, text="Unit: GHz")
+        unit_label.grid(row=1, column=0, columnspan=2, padx=10, pady=(5,0), sticky="w")
+
+        ttk.Label(dialog, text="Start:").grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        start_var = tk.DoubleVar(value=self.fmin.get())
+        ttk.Entry(dialog, textvariable=start_var, width=8).grid(row=2, column=1, padx=10, pady=5, sticky="w")
+
+        ttk.Label(dialog, text="End:").grid(row=3, column=0, padx=10, pady=5, sticky="w")
+        end_var = tk.DoubleVar(value=self.fmax.get())
+        ttk.Entry(dialog, textvariable=end_var, width=8).grid(row=3, column=1, padx=10, pady=5, sticky="w")
+
+        ttk.Label(dialog, text="Step:").grid(row=4, column=0, padx=10, pady=5, sticky="w")
+        step_var = tk.DoubleVar(value=0.1)
+        ttk.Entry(dialog, textvariable=step_var, width=8).grid(row=4, column=1, padx=10, pady=5, sticky="w")
+
+        def on_subplot_change(*args):
+            key = subplot_var.get()
+            for ax in fig.get_axes():
+                if ax.get_title() == key:
+                    xl = ax.get_xlabel().lower()
+                    if 'time' in xl and any(u in xl for u in ['ns', 'ms', 'us', 'ps']):
+                        unit_label.config(text="Unit: ns")
+                        start_var.set(0.0)
+                        end_var.set(50.0)
+                        step_var.set(1.0)
+                    else:
+                        unit_label.config(text="Unit: GHz")
+                        start_var.set(self.fmin.get())
+                        end_var.set(self.fmax.get())
+                        step_var.set(0.1)
+                    break
+
+        subplot_var.trace('w', on_subplot_change)
+        on_subplot_change()
+
+        def do_add():
+            self._add_bulk_markers(fig, canvas, start_var.get(), end_var.get(),
+                                   step_var.get(), subplot_var.get())
+            dialog.destroy()
+
+        ttk.Button(dialog, text="Add markers", command=do_add).grid(row=5, column=0, columnspan=2, pady=15)
+
+    def _add_bulk_markers(self, fig, canvas, start_val, end_val, step_val, subplot_key):
+        if step_val <= 0 or start_val >= end_val:
+            return
+
+        fig_key = id(fig)
+        if fig_key not in self.marker_data:
+            self.marker_data[fig_key] = []
+
+        ax = None
+        for a in fig.get_axes():
+            if a.get_title() == subplot_key:
+                ax = a
+                break
+        if ax is None:
+            return
+
+        use_db = self.get_scale_mode()
+        unit = "dB" if use_db else "mag"
+        xlabel = ax.get_xlabel().lower()
+        is_time_domain = 'time' in xlabel and any(u in xlabel for u in ['ns', 'ms', 'us', 'ps', ' s]', '[s]'])
+
+        lines = [(ln, ln.get_xdata(), ln.get_ydata()) for ln in ax.get_lines() if len(ln.get_xdata()) > 0]
+        if not lines:
+            return
+
+        val = start_val
+        while val <= end_val + 1e-9:
+            if is_time_domain:
+                target_x = val
+            else:
+                target_x = val * 1e9
+
+            for ln, xd, yd in lines:
+                idx = np.argmin(np.abs(xd - target_x))
+                xf = xd[idx]
+                yf = yd[idx]
+                lbl = ln.get_label()
+                col = ln.get_color()
+
+                if is_time_domain:
+                    time_unit = 'ns' if 'ns' in xlabel else ('ms' if 'ms' in xlabel else 's')
+                    annotation_text = f"{round(xf, 3)} {time_unit}\n{round(yf, 2)} {unit}"
+                    panel_text = f"{lbl}: {round(xf, 3)} {time_unit}  |  {round(yf, 2)} {unit}\n"
+                else:
+                    annotation_text = f"{round(xf / 1e6, 3)} MHz\n{round(yf, 2)} {unit}"
+                    panel_text = f"{lbl}: {round(xf / 1e6, 3)} MHz  |  {round(yf, 2)} {unit}\n"
+
+                self.marker_data[fig_key].append({
+                    'x': xf, 'y': yf, 'label': lbl, 'color': col,
+                    'subplot_key': subplot_key, 'panel_text': panel_text,
+                    'annotation_text': annotation_text, 'style': 'snap', '_artists': [],
+                })
+
+            val += step_val
+
+        self._redraw_markers(fig, canvas)
+        self._update_text_panel()
 
     def get_files(self):
         return self.fls
@@ -987,10 +1208,10 @@ class App(tk.Tk):
     def _onTab(self, e):
         tabTxt = self.nb.tab(self.nb.select(), "text")
         self.current_tab = self._get_tab_by_name(tabTxt)
-        
+
         if self.current_tab is not None:
             self.current_tab.update()
-        
+
         self._update_text_panel()
     
     def _get_tab_by_name(self, name):
@@ -1018,127 +1239,57 @@ class App(tk.Tk):
     def _update_text_panel(self):
         self.txt.config(state=tk.NORMAL)
         self.txt.delete(1.0, tk.END)
-        
+
         if self.current_tab and hasattr(self.current_tab, 'get_text_output'):
             text = self.current_tab.get_text_output()
             if text:
                 self.txt.insert(tk.END, text)
-        
-        if self.mtxt:
+
+        all_marker_texts = []
+        for fig_key, markers in self.marker_data.items():
+            for md in markers:
+                all_marker_texts.append(md['panel_text'])
+
+        if all_marker_texts:
             self.txt.insert(tk.END, "\n" + "="*40 + "\n")
             self.txt.insert(tk.END, "MARKERS\n")
             self.txt.insert(tk.END, "-"*40 + "\n")
-            for marker_text in self.mtxt:
-                self.txt.insert(tk.END, marker_text)
-        
+            for mt in all_marker_texts:
+                self.txt.insert(tk.END, mt)
+
         self.txt.config(state=tk.DISABLED)
     
     def _clearM(self):
-        for m in self.mrk:
-            try:
-                m['marker'].remove()
-                m['text'].remove()
-            except:
-                pass
-        self.mrk.clear()
-        self.mtxt.clear()
+        for fig_key, markers in self.marker_data.items():
+            for md in markers:
+                for a in md.get('_artists', []):
+                    try:
+                        a.remove()
+                    except Exception:
+                        pass
+        self.marker_data.clear()
         self._update_text_panel()
         if self.current_tab and hasattr(self.current_tab, 'canvas'):
             self.current_tab.canvas.draw()
     
-    def _placeMarkerDialog(self):
-        if not self.current_tab or not hasattr(self.current_tab, 'fig'):
-            return
-        
-        freq_hz = self.marker_freq.get() * 1e9
-        
-        lines = []
-        for ax in self.current_tab.fig.get_axes():
-            for ln in ax.get_lines():
-                lbl = ln.get_label()
-                if lbl.startswith('_'):
-                    continue
-                xd = ln.get_xdata()
-                if len(xd) == 0:
-                    continue
-                if xd.min() <= freq_hz <= xd.max():
-                    lines.append((ax, ln, lbl))
-        
-        if not lines:
-            messagebox.showinfo("Place marker", "No lines contain this frequency.")
-            return
-        
-        dialog = tk.Toplevel(self)
-        dialog.title("Place marker")
-        dialog.transient(self)
-        dialog.grab_set()
-        
-        ttk.Label(dialog, text=f"Place marker at {self.marker_freq.get()} GHz on:",
-                  font=("", 10, "bold")).pack(pady=10, padx=10)
-        
-        checks = []
-        for ax, ln, lbl in lines:
-            var = tk.BooleanVar(value=True)
-            ttk.Checkbutton(dialog, text=lbl, variable=var).pack(anchor="w", padx=20)
-            checks.append((var, ax, ln))
-        
-        def place():
-            use_db = self.get_scale_mode()
-            unit = "dB" if use_db else "mag"
-            for var, ax, ln in checks:
-                if not var.get():
-                    continue
-                xd = np.array(ln.get_xdata())
-                yd = np.array(ln.get_ydata())
-                idx = np.argmin(np.abs(xd - freq_hz))
-                xf = float(xd[idx])
-                yf = float(yd[idx])
-                col = ln.get_color()
-                lbl = ln.get_label()
-                
-                m, = ax.plot([xf], [yf], 'o', color=col, markersize=9)
-                annotation_text = f"{round(xf/1e9,4)} GHz\n{round(yf,2)} {unit}"
-                marker_text = f"{lbl}: {round(xf/1e9,4)} GHz  |  {round(yf,2)} {unit}\n"
-                t = ax.annotate(
-                    annotation_text,
-                    xy=(xf, yf), xytext=(10, 20),
-                    textcoords="offset points",
-                    bbox=dict(boxstyle="round,pad=0.2", fc="yellow", alpha=0.5),
-                    arrowprops=dict(arrowstyle="->", color=col, lw=1.5),
-                    fontsize=9
-                )
-                self.mrk.append({'marker': m, 'text': t, 'ax': ax, 'label': lbl})
-                self.mtxt.append(marker_text)
-            
-            self._update_text_panel()
-            self.current_tab.canvas.draw()
-            dialog.destroy()
-        
-        btnfrm = ttk.Frame(dialog)
-        btnfrm.pack(pady=10)
-        ttk.Button(btnfrm, text="OK", command=place).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btnfrm, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
-        
-        dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
-        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
-        dialog.geometry(f"+{x}+{y}")
-    
     def _onClick(self, ev):
+        if ev.button == 3:
+            self._onRightClickMarker(ev)
+            return
         if not self.markers_enabled.get():
             return
         if ev.inaxes is None:
             return
-        
+
         x = ev.xdata
         y = ev.ydata
         if x is None or y is None:
             return
-        
+
         axc = ev.inaxes
         mind = float("inf")
         best = None
-        
+
         for ln in axc.get_lines():
             xd = ln.get_xdata()
             yd = ln.get_ydata()
@@ -1153,25 +1304,27 @@ class App(tk.Tk):
                 lbl = ln.get_label()
                 col = ln.get_color()
                 best = (xf, yf, lbl, col)
-        
+
         if best:
             xf, yf, lbl, col = best
-            m, = axc.plot([xf], [yf], 'o', color=col, markersize=9)
-            
+            fig = ev.canvas.figure
+            fig_key = id(fig)
+
             use_db = self.get_scale_mode()
             unit = "dB" if use_db else "mag"
-            
+
             xlabel = axc.get_xlabel().lower()
             is_time_domain = 'time' in xlabel and any(unit_str in xlabel for unit_str in ['ns', 'ms', 'us', 'ps', ' s]', '[s]'])
-            
+
             if is_time_domain:
-                time_unit = 'ns' if 'ns' in xlabel else ('ms' if 'ms' in xlabel else ('μs' if 'us' in xlabel else 's'))
+                time_unit = 'ns' if 'ns' in xlabel else ('ms' if 'ms' in xlabel else ('us' if 'us' in xlabel else 's'))
                 annotation_text = f"{round(xf,3)} {time_unit}\n{round(yf,2)} {unit}"
-                marker_text = f"{lbl}: {round(xf,3)} {time_unit}  |  {round(yf,2)} {unit}\n"
+                panel_text = f"{lbl}: {round(xf,3)} {time_unit}  |  {round(yf,2)} {unit}\n"
             else:
                 annotation_text = f"{round(xf/1e6,3)} MHz\n{round(yf,2)} {unit}"
-                marker_text = f"{lbl}: {round(xf/1e6,3)} MHz  |  {round(yf,2)} {unit}\n"
-            
+                panel_text = f"{lbl}: {round(xf/1e6,3)} MHz  |  {round(yf,2)} {unit}\n"
+
+            m, = axc.plot([xf], [yf], 'o', color=col, markersize=9)
             t = axc.annotate(
                 annotation_text,
                 xy=(xf, yf), xytext=(10, 20),
@@ -1180,9 +1333,15 @@ class App(tk.Tk):
                 arrowprops=dict(arrowstyle="->", color=col, lw=1.5),
                 fontsize=9
             )
-            
-            self.mrk.append({'marker': m, 'text': t, 'ax': axc, 'label': lbl})
-            self.mtxt.append(marker_text)
+
+            if fig_key not in self.marker_data:
+                self.marker_data[fig_key] = []
+            self.marker_data[fig_key].append({
+                'x': xf, 'y': yf, 'label': lbl, 'color': col,
+                'subplot_key': axc.get_title(), 'panel_text': panel_text,
+                'annotation_text': annotation_text, 'style': 'snap',
+                '_artists': [m, t],
+            })
             self._update_text_panel()
             ev.canvas.draw()
     
@@ -1190,22 +1349,33 @@ class App(tk.Tk):
         pass
     
     def _onClickVar(self, ev):
+        if ev.button == 3:
+            self._onRightClickMarker(ev)
+            return
         if not self.markers_enabled.get():
             return
         if ev.inaxes is None:
             return
-        
+
         x, y = ev.xdata, ev.ydata
-        
+        fig = ev.canvas.figure
+        fig_key = id(fig)
+
         marker = ev.inaxes.plot(x, y, 'rx', markersize=10, markeredgewidth=2)[0]
-        text = ev.inaxes.text(x, y, f'  ({x:.3e}, {y:.3e})', 
-                             fontsize=9, color='red', 
+        text = ev.inaxes.text(x, y, f'  ({x:.3e}, {y:.3e})',
+                             fontsize=9, color='red',
                              verticalalignment='bottom')
-        
-        self.mrk.append({'marker': marker, 'text': text, 'label': 'variance'})
-        marker_info = f"Variance marker: freq={x:.3e} Hz, variance={y:.3e}\n"
-        self.mtxt.append(marker_info)
-        
+
+        panel_text = f"Variance marker: freq={x:.3e} Hz, variance={y:.3e}\n"
+
+        if fig_key not in self.marker_data:
+            self.marker_data[fig_key] = []
+        self.marker_data[fig_key].append({
+            'x': x, 'y': y, 'label': 'variance', 'color': 'red',
+            'subplot_key': ev.inaxes.get_title(), 'panel_text': panel_text,
+            'annotation_text': '', 'style': 'freeform',
+            '_artists': [marker, text],
+        })
         self._update_text_panel()
         ev.canvas.draw()
     
@@ -1216,20 +1386,23 @@ class App(tk.Tk):
         pass
     
     def _onClickTDA(self, ev):
+        if ev.button == 3:
+            self._onRightClickMarker(ev)
+            return
         if not self.markers_enabled.get():
             return
         if ev.inaxes is None:
             return
-        
+
         x = ev.xdata
         y = ev.ydata
         if x is None or y is None:
             return
-        
+
         axc = ev.inaxes
         mind = float("inf")
         best = None
-        
+
         for ln in axc.get_lines():
             xd = ln.get_xdata()
             yd = ln.get_ydata()
@@ -1244,14 +1417,16 @@ class App(tk.Tk):
                 lbl = ln.get_label()
                 col = ln.get_color()
                 best = (xf, yf, lbl, col)
-        
+
         if best:
             xf, yf, lbl, col = best
-            m, = axc.plot([xf], [yf], 'o', color=col, markersize=9)
-            
+            fig = ev.canvas.figure
+            fig_key = id(fig)
+
             annotation_text = f"{round(xf, 3)} ns\n{round(yf, 2)} dB"
-            marker_text = f"{lbl}: {round(xf, 3)} ns  |  {round(yf, 2)} dB\n"
-            
+            panel_text = f"{lbl}: {round(xf, 3)} ns  |  {round(yf, 2)} dB\n"
+
+            m, = axc.plot([xf], [yf], 'o', color=col, markersize=9)
             t = axc.annotate(
                 annotation_text,
                 xy=(xf, yf), xytext=(10, 20),
@@ -1260,9 +1435,15 @@ class App(tk.Tk):
                 arrowprops=dict(arrowstyle="->", color=col, lw=1.5),
                 fontsize=9
             )
-            
-            self.mrk.append({'marker': m, 'text': t, 'ax': axc, 'label': lbl})
-            self.mtxt.append(marker_text)
+
+            if fig_key not in self.marker_data:
+                self.marker_data[fig_key] = []
+            self.marker_data[fig_key].append({
+                'x': xf, 'y': yf, 'label': lbl, 'color': col,
+                'subplot_key': axc.get_title(), 'panel_text': panel_text,
+                'annotation_text': annotation_text, 'style': 'snap',
+                '_artists': [m, t],
+            })
             self._update_text_panel()
             ev.canvas.draw()
     
@@ -1298,64 +1479,14 @@ class App(tk.Tk):
         overlay_menu = tk.Menu(menu, tearoff=0)
         for param in ['s11', 's21', 's12', 's22']:
             overlay_menu.add_command(
-                label=f"{'✓ ' if param in file_data['overlay_params'] else '  '}{param.upper()}",
+                label=f"{'ok' if param in file_data['overlay_params'] else '  '}{param.upper()}",
                 command=lambda p=param: self._toggleOverlayParam(filepath, p)
             )
         menu.add_cascade(label="Add to Overlay", menu=overlay_menu)
         
-        markers_menu = tk.Menu(menu, tearoff=0)
-        stem = Path(filepath).stem
-        found = []
-        for i, (m, mt) in enumerate(zip(self.mrk, self.mtxt)):
-            if m.get('label') == stem:
-                found.append((i, mt.strip()))
-        if found:
-            for idx, desc in found:
-                markers_menu.add_command(
-                    label=desc,
-                    command=lambda ii=idx: self._deleteOneMarker(ii)
-                )
-            markers_menu.add_separator()
-            markers_menu.add_command(
-                label="Delete all on this line",
-                command=lambda s=stem: self._deleteMarkersForLabel(s)
-            )
-        else:
-            markers_menu.add_command(label="(none)", state="disabled")
-        menu.add_cascade(label="Delete markers", menu=markers_menu)
-        
         menu.add_command(label="Delete", 
                         command=lambda: self._deleteLine(filepath))
         menu.post(event.x_root, event.y_root)
-    
-    def _deleteOneMarker(self, idx):
-        if idx >= len(self.mrk):
-            return
-        m = self.mrk[idx]
-        try:
-            m['marker'].remove()
-            m['text'].remove()
-        except:
-            pass
-        self.mrk.pop(idx)
-        self.mtxt.pop(idx)
-        self._update_text_panel()
-        if self.current_tab and hasattr(self.current_tab, 'canvas'):
-            self.current_tab.canvas.draw()
-    
-    def _deleteMarkersForLabel(self, label):
-        to_remove = [i for i, m in enumerate(self.mrk) if m.get('label') == label]
-        for i in reversed(to_remove):
-            try:
-                self.mrk[i]['marker'].remove()
-                self.mrk[i]['text'].remove()
-            except:
-                pass
-            self.mrk.pop(i)
-            self.mtxt.pop(i)
-        self._update_text_panel()
-        if self.current_tab and hasattr(self.current_tab, 'canvas'):
-            self.current_tab.canvas.draw()
     
     def _editLineStyle(self, filepath, file_data):
         dialog = tk.Toplevel(self)
@@ -1405,7 +1536,7 @@ class App(tk.Tk):
         ttk.Label(dialog, text="Preview:").grid(row=5, column=0, padx=10, pady=(15,5), sticky="w")
         previewFrame = ttk.Frame(dialog, relief=tk.SUNKEN, borderwidth=2)
         previewFrame.grid(row=5, column=1, padx=10, pady=(15,5), sticky="ew")
-        previewLabel = tk.Label(previewFrame, text="███", font=("", 14), background="white")
+        previewLabel = tk.Label(previewFrame, text="---", font=("", 14), background="white")
         previewLabel.pack(padx=20, pady=10)
         
         def updatePreview(*args):
