@@ -625,11 +625,14 @@ class App(tk.Tk):
         for ax in fig.get_axes():
             ax_map[ax.get_title()] = ax
 
+        live_axes = set(id(ax) for ax in fig.get_axes())
+            
         for md in markers:
             artists_valid = bool(md.get('_artists'))
             if artists_valid:
                 for a in md['_artists']:
-                    if getattr(a, 'axes', None) is None:
+                    a_ax = getattr(a, 'axes', None)
+                    if a_ax is None or id(a_ax) not in live_axes:
                         artists_valid = False
                         break
 
