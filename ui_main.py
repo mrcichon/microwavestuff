@@ -24,11 +24,7 @@ from ui_tab_polar import TabPolar
 from ui_tab_rozpierdol import TabRozpierdol as TabOverlay
 from ui_tab_field import TabField
 
-try:
-    from ui_tab_ml import TabMLTraining
-    ML_AVAILABLE = True
-except ImportError:
-    ML_AVAILABLE = False
+ML_AVAILABLE = False
 
 class ValidatedDoubleVar(tk.DoubleVar):
     def __init__(self, *args, **kwargs):
