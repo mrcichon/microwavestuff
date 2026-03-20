@@ -308,7 +308,7 @@ class TabRegex:
         if self.regex_phase.get():
             title += " Ã¢â‚¬â€ Phase"
         if self.regex_gate.get():
-            title += f" [Gated: {self.regex_gate_center.get()}Ã‚Â±{self.regex_gate_span.get()/2}ns]"
+            title += f" [Gated: {self.regex_gate_center.get()}ns±{self.regex_gate_span.get()/2}ns]"
         ax.set_title(title)
         ax.grid(True)
         
