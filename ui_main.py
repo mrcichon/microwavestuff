@@ -71,12 +71,7 @@ class App(tk.Tk):
         lfrm = ttk.Frame(self)
         lfrm.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
         
-        nfrm = ttk.Frame(lfrm)
-        nfrm.pack(anchor="w", pady=(0,5))
-        ttk.Label(nfrm, text="Name:").pack(side=tk.LEFT)
-        self.window_name = tk.StringVar(value="")
-        self.window_name.trace_add("write", self._updateWindowTitle)
-        ttk.Entry(nfrm, textvariable=self.window_name, width=25).pack(side=tk.LEFT, padx=(5,0))
+        ttk.Button(lfrm, text="Name window...", command=self._nameWindowDialog).pack(anchor="w", pady=(0,5))
         
         ffrm = ttk.Frame(lfrm)
         ffrm.pack(anchor="w", pady=(10,0))
@@ -1490,10 +1485,16 @@ class App(tk.Tk):
             self._update_text_panel()
             ev.canvas.draw()
     
-    def _updateWindowTitle(self, *args):
-        name = self.window_name.get().strip()
-        if name:
-            self.title(f"{name} - i can see through your skin")
+    def _nameWindowDialog(self):
+        from tkinter import simpledialog
+        name = simpledialog.askstring("Name window", "Window name (empty to reset):",
+                                      initialvalue=getattr(self, '_window_name', ''),
+                                      parent=self)
+        if name is None:
+            return
+        self._window_name = name.strip()
+        if self._window_name:
+            self.title(f"{self._window_name} - i can see through your skin")
         else:
             self.title("i can see through your skin")
 
