@@ -71,6 +71,13 @@ class App(tk.Tk):
         lfrm = ttk.Frame(self)
         lfrm.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
         
+        nfrm = ttk.Frame(lfrm)
+        nfrm.pack(anchor="w", pady=(0,5))
+        ttk.Label(nfrm, text="Name:").pack(side=tk.LEFT)
+        self.window_name = tk.StringVar(value="")
+        self.window_name.trace_add("write", self._updateWindowTitle)
+        ttk.Entry(nfrm, textvariable=self.window_name, width=25).pack(side=tk.LEFT, padx=(5,0))
+        
         ffrm = ttk.Frame(lfrm)
         ffrm.pack(anchor="w", pady=(10,0))
         ttk.Label(ffrm, text="Zakres f [GHz]:").pack(side=tk.LEFT)
@@ -84,8 +91,8 @@ class App(tk.Tk):
         self._validateNumeric(ent2, self.fmax, self._updAll)
         
         ttk.Button(lfrm, text="Dodaj pliki", command=self._addFiles).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="Usuń wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="Usuń zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="Usu\u0144 wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
+        ttk.Button(lfrm, text="Usu\u0144 zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Deselect all", command=self._deselectAll).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Average files", command=self._avgFiles).pack(anchor="w", pady=(0,10))
         
@@ -1483,6 +1490,13 @@ class App(tk.Tk):
             self._update_text_panel()
             ev.canvas.draw()
     
+    def _updateWindowTitle(self, *args):
+        name = self.window_name.get().strip()
+        if name:
+            self.title(f"{name} - i can see through your skin")
+        else:
+            self.title("i can see through your skin")
+
     def _toggleLegend(self):
         if self.legendVisible.get():
             self.plotPaneF.add(self.legendFrameF, weight=1)
