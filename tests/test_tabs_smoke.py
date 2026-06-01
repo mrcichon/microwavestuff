@@ -11,8 +11,6 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from ui_tab_freq import TabFreq
 from ui_tab_time import TabTime
 from ui_tab_regex import TabRegex
-from ui_tab_integrate import TabIntegrate
-from ui_tab_variance import TabVariance
 from ui_tab_shape import TabShapeComparison
 from ui_tab_td_analysis import TabTDAnalysis
 from ui_tab_rozpierdol import TabRozpierdol
@@ -59,12 +57,6 @@ def _build(name, tk_root, files):
     if name == "overlay":
         p, fig = _w(tk_root, legend=True)
         return TabRozpierdol(*p, c["files"], c["freq"], c["legend"]), fig
-    if name == "integrate":
-        p, fig = _w(tk_root, ax=True)
-        return TabIntegrate(*p, c["files"], c["freq"], c["scale"]), fig
-    if name == "variance":
-        p, fig = _w(tk_root, ax=True)
-        return TabVariance(*p, c["files"], c["freq"]), fig
     if name == "shape":
         p, fig = _w(tk_root)
         return TabShapeComparison(*p, c["files"], c["freq"], c["scale"]), fig
@@ -83,10 +75,9 @@ def _build(name, tk_root, files):
     raise KeyError(name)
 
 
-ALL_TABS = ["freq", "time", "regex", "overlay", "integrate", "variance",
-            "shape", "td", "overlap", "polar", "field"]
+ALL_TABS = ["freq", "time", "regex", "overlay", "shape", "td", "overlap", "polar", "field"]
 # tabs that load the S-param file family through the shared caching path
-DATA_TABS = ["freq", "time", "regex", "overlay", "integrate", "variance", "shape", "td"]
+DATA_TABS = ["freq", "time", "regex", "overlay", "shape", "td"]
 
 
 def _prep(name, tab, files):
