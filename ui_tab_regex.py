@@ -249,8 +249,15 @@ class TabRegex:
         files_data = self._get_files_data()
 
         if not files_data:
-            ax.text(0.5, 0.5, f"No files match pattern: {self.regex_pattern.get()}\nCheck regex and capture group",
-                    ha="center", va="center", fontsize=12, color="gray")
+            info = getattr(self, "all_files_info", [])
+            n_match = sum(1 for s in info if s.startswith("Y"))
+            if not info:
+                msg = "No files selected"
+            elif n_match == 0:
+                msg = f"{len(info)} selected, none match pattern: {self.regex_pattern.get()}"
+            else:
+                msg = f"{n_match} matched but none could be loaded for {self.get_freq_range()[2]}\n(see terminal for skip reasons)"
+            ax.text(0.5, 0.5, msg, ha="center", va="center", fontsize=12, color="gray")
             ax.set_xticks([])
             ax.set_yticks([])
             self.canvas.draw()
@@ -259,8 +266,10 @@ class TabRegex:
             return
 
         files_data.sort(key=lambda x: x[1])
-        freqs = files_data[0][2]
-        s_matrix = np.array([d[3] for d in files_data])
+        # files may have different sweeps; the per-frequency analysis needs one shared grid,
+        # so resample every curve onto the densest one (a no-op when they already match)
+        freqs = max((d[2] for d in files_data), key=len)
+        s_matrix = np.array([np.interp(freqs, d[2], d[3]) for d in files_data])
         labels = [d[0] for d in files_data]
         n_pts = len(freqs)
 

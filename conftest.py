@@ -57,6 +57,22 @@ def family_files(family_s2p):
     return [(FakeVar(True), str(p), {}) for p in family_s2p]
 
 
+@pytest.fixture
+def ragged_files(tmp_path_factory):
+    # _(\d+)ml-matching names but different point counts per file, like real VNA dumps
+    d = tmp_path_factory.mktemp("ragged")
+    out = []
+    for nm, npts in [("phantom_100ml", 128), ("phantom_400ml", 101), ("phantom_900ml", 64)]:
+        f = np.linspace(0.4e9, 4.0e9, npts)
+        s = np.zeros((npts, 2, 2), dtype=complex)
+        s[:, 0, 0] = 10 ** (-15 / 20); s[:, 1, 0] = 10 ** (-25 / 20)
+        s[:, 1, 1] = 10 ** (-30 / 20); s[:, 0, 1] = s[:, 1, 0]
+        base = d / nm
+        rf.Network(f=f, s=s, z0=50, f_unit="Hz").write_touchstone(str(base), form="db", write_z0=False)
+        out.append((FakeVar(True), str(base.with_suffix(".s2p")), {}))
+    return out
+
+
 @pytest.fixture(scope="session")
 def tk_root():
     tk = pytest.importorskip("tkinter")

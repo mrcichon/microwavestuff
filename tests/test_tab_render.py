@@ -109,3 +109,10 @@ def test_tab_plots_family_data(tk_root, name, family_files):
     tab.update()
     # the family must actually reach the canvas, not get swallowed by a silent except
     assert _drew_something(fig), f"{name}: update() produced nothing from the file family"
+
+
+def test_regex_handles_files_with_different_point_counts(tk_root, ragged_files):
+    # real sweeps differ in length; the per-frequency matrix must be resampled, not crash
+    tab, fig = _build("regex", tk_root, ragged_files)
+    tab.update()
+    assert any(ax.lines for ax in fig.axes)
