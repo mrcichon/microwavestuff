@@ -31,8 +31,10 @@ class TabShapeComparison:
         self.max_lag = tk.IntVar(value=5)
         
         self.shape_data = None
-        
+
         self._build_ui()
+        from ui_util import bind_enter
+        bind_enter(self.control_frame, self.update)
     
     def _build_ui(self):
         
@@ -68,7 +70,7 @@ class TabShapeComparison:
         self.adapt_frame.pack_forget()
         
         ttk.Label(self.adapt_frame, text="Adaptive:").pack(side=tk.LEFT, padx=(0,5))
-        ttk.Label(self.adapt_frame, text="±:").pack(side=tk.LEFT)
+        ttk.Label(self.adapt_frame, text="+/-:").pack(side=tk.LEFT)
         ttk.Spinbox(self.adapt_frame, from_=1.0, to=4.0, increment=0.5,
                    textvariable=self.shape_alpha, width=5,
                    command=self.update).pack(side=tk.LEFT, padx=2)

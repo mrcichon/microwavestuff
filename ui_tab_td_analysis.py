@@ -23,6 +23,8 @@ class TabTDAnalysis:
         self.td_analysis_data = None
 
         self._build_ui()
+        from ui_util import bind_enter
+        bind_enter(self.control_frame, self.update)
         
     def _build_ui(self):
         

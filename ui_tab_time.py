@@ -38,8 +38,10 @@ class TabTime:
         
         self.extrema_lines = []
         self.last_result = None
-        
+
         self._build_ui()
+        from ui_util import bind_enter
+        bind_enter(self.control_frame, self.update)
         
     def _build_ui(self):
         

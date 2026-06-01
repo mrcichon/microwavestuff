@@ -111,6 +111,16 @@ def test_tab_plots_family_data(tk_root, name, family_files):
     assert _drew_something(fig), f"{name}: update() produced nothing from the file family"
 
 
+def test_bind_enter_installs_return_binding(tk_root):
+    from ui_util import bind_enter
+    frame = ttk.Frame(tk_root)
+    entry = ttk.Entry(frame)
+    nested = ttk.Entry(ttk.Frame(frame))
+    bind_enter(frame, lambda: None)
+    assert entry.bind("<Return>")        # bound directly under the container
+    assert nested.bind("<Return>")       # and recursively in nested frames
+
+
 def test_regex_handles_files_with_different_point_counts(tk_root, ragged_files):
     # real sweeps differ in length; the per-frequency matrix must be resampled, not crash
     tab, fig = _build("regex", tk_root, ragged_files)

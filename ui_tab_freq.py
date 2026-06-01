@@ -34,8 +34,10 @@ class TabFreq:
         
         self.extrema_lines = []
         self.last_extrema = None
-        
+
         self._build_ui()
+        from ui_util import bind_enter
+        bind_enter(self.control_frame, self.update)
         
     def _build_ui(self):
         ttk.Label(self.control_frame, text="Show:").pack(side=tk.LEFT, padx=(0,5))

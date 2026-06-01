@@ -124,9 +124,9 @@ class TabRegex:
 
         ttk.Separator(frame2, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
 
-        ttk.Checkbutton(frame2, text="Kendall \u03c4",
+        ttk.Checkbutton(frame2, text="Kendall tau",
                          variable=self.regex_tau, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame2, text="|\u03c4|\u2265").pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Label(frame2, text="|tau|>=").pack(side=tk.LEFT, padx=(2, 0))
         tau_entry = ttk.Entry(frame2, textvariable=self.regex_tau_threshold, width=4)
         tau_entry.pack(side=tk.LEFT, padx=2)
         tau_entry.bind("<Return>", lambda e: self.update())
@@ -135,7 +135,7 @@ class TabRegex:
 
         ttk.Checkbutton(frame2, text="Max disp.",
                          variable=self.regex_disp, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame2, text="\u2264").pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Label(frame2, text="<=").pack(side=tk.LEFT, padx=(2, 0))
         disp_entry = ttk.Entry(frame2, textvariable=self.regex_disp_threshold, width=3)
         disp_entry.pack(side=tk.LEFT, padx=2)
         disp_entry.bind("<Return>", lambda e: self.update())
@@ -162,7 +162,7 @@ class TabRegex:
         ttk.Label(frame3, text="Window:").pack(side=tk.LEFT, padx=(8, 2))
         ttk.Spinbox(frame3, from_=3, to=201, increment=2, width=4,
                      textvariable=self.regex_congru_window, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame3, text="Congr.≥").pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Label(frame3, text="Congr>=").pack(side=tk.LEFT, padx=(8, 0))
         congru_entry = ttk.Entry(frame3, textvariable=self.regex_congru_threshold, width=5)
         congru_entry.pack(side=tk.LEFT, padx=2)
         congru_entry.bind("<Return>", lambda e: self.update())
@@ -173,7 +173,7 @@ class TabRegex:
         ttk.Separator(frame3, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
         ttk.Checkbutton(frame3, text="Track shift",
                          variable=self.regex_track, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame3, text="Mono≥").pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Label(frame3, text="Mono>=").pack(side=tk.LEFT, padx=(8, 0))
         mono_entry = ttk.Entry(frame3, textvariable=self.regex_track_mono, width=5)
         mono_entry.pack(side=tk.LEFT, padx=2)
         mono_entry.bind("<Return>", lambda e: self.update())
@@ -385,7 +385,7 @@ class TabRegex:
         if self.regex_phase.get():
             title += " Phase"
         if self.regex_gate.get():
-            title += f" [Gated: {self.regex_gate_center.get()}\u00b1{self.regex_gate_span.get()/2}ns]"
+            title += f" [Gated: {self.regex_gate_center.get()}+/-{self.regex_gate_span.get()/2}ns]"
         ax.set_title(title)
         ax.grid(True)
 
@@ -443,7 +443,7 @@ class TabRegex:
         icpt = region['intercept'] / 1e6
         xs = np.array([v.min(), v.max()])
         ax.plot(xs, slope * xs + icpt, '--', color='gray')
-        ax.set_title(f"{slope:.1f} MHz/unit\nR²={region['r2']:.2f}  "
+        ax.set_title(f"{slope:.1f} MHz/unit\nR^2={region['r2']:.2f}  "
                      f"@ {region['f0']/1e9:.2f}-{region['f1']/1e9:.2f} GHz", fontsize=8)
         ax.set_xlabel("regex value", fontsize=8)
         ax.set_ylabel("feature shift [MHz]", fontsize=8)
