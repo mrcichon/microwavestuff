@@ -15,3 +15,4 @@ def test_time_gate_patch_runs_on_oneport():
     assert gated.frequency.npoints == ntw.frequency.npoints
     assert gated.s.shape == ntw.s.shape
     assert np.isfinite(gated.s).all()
+    assert not np.allclose(gated.s, ntw.s)        # gating actually altered the response

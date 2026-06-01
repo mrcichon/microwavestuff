@@ -31,5 +31,6 @@ def test_extract_theta_phi_two_planes_stitch():
         "dir_dbi": [1.0, 2.0, 3.0, 4.0],
     })
     theta, db, used = extract_theta_phi_series(df)
-    assert theta.min() >= 0 and theta.max() <= 360
-    assert "+" in used                  # combined-plane label
+    assert used == "phi=0+180"           # took the stitch branch with both planes
+    # plane b mirrored as 360-theta -> 330 and 270 appear in the stitched series
+    assert 330.0 in theta and 270.0 in theta

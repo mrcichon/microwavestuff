@@ -18,7 +18,9 @@ def test_find_extrema_respects_range():
     vals = np.arange(11.0)                      # global max at 2.0 GHz
     files_data = [{"name": "f", "freq": freq, "params": {"s11": vals}}]
     ext = find_extrema(files_data, ["s11"], (1.0, 1.4), find_minima=False, find_maxima=True)
-    assert ext[0]["freq"] <= 1.4e9 + 1            # max confined to the window
+    assert len(ext) == 1
+    assert 1.0e9 <= ext[0]["freq"] <= 1.4e9       # max confined to the window, not the global 2.0
+    assert ext[0]["value"] < 10                   # global max (10 @ 2.0GHz) is excluded
 
 
 def test_extract_freq_data_reads_file(files_list):

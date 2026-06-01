@@ -28,4 +28,5 @@ def test_find_td_peaks_oneport_has_no_condition():
     r = find_td_peaks(fd, time_limit_ns=40)[0]
     assert r["s21_max_time"] is None
     assert r["condition_met"] is None
-    assert "PASS" not in format_td_analysis_text([r], 40) or True   # just exercise formatter
+    txt = format_td_analysis_text([r], 40)
+    assert "Not available" in txt and "PASS" not in txt   # 1-port: no pass/fail verdict
