@@ -58,6 +58,20 @@ def family_files(family_s2p):
 
 
 @pytest.fixture(scope="session")
+def tk_root():
+    tk = pytest.importorskip("tkinter")
+    import matplotlib
+    matplotlib.use("TkAgg")
+    try:
+        root = tk.Tk()
+    except tk.TclError as e:               # no display / no X -> skip the smoke layer
+        pytest.skip(f"no display for tkinter: {e}")
+    root.withdraw()
+    yield root
+    root.destroy()
+
+
+@pytest.fixture(scope="session")
 def comma_s2p(sample_s2p, tmp_path_factory):
     # same data with commas for decimals (and the comment lines left alone), to exercise
     # loadFile's comma->dot path and its comment-skip
