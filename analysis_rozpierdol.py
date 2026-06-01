@@ -1,61 +1,45 @@
+import sys
 import numpy as np
-from pathlib import Path
 
 def extract_overlay_data(files_list, freq_range_str, file_params_map, mode):
-    from sparams_io import loadFile
-    
+    from sparams_io import get_cached_network, display_name
+
     result = []
-    
+
     for v, p, d in files_list:
         if not v.get():
             continue
-        
+
         params = file_params_map.get(p, [])
         if not params:
             continue
-        
-        ext = Path(p).suffix.lower()
-        
-        if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
-            try:
-                ntw_full = d.get('ntwk_full')
-                if ntw_full is None:
-                    ntw_full = loadFile(p)
-                    d['ntwk_full'] = ntw_full
-                
-                cached_range = d.get('cached_range')
-                if cached_range != freq_range_str:
-                    ntw = ntw_full[freq_range_str]
-                    d['ntwk'] = ntw
-                    d['cached_range'] = freq_range_str
+
+        ntw = get_cached_network(p, d, freq_range_str)
+        if ntw is None:
+            continue
+
+        fname = display_name(p, d)
+        try:
+            for param in params:
+                s_param = getattr(ntw, param)
+                if mode == 'db':
+                    arr = s_param.s_db.flatten()
+                elif mode == 'mag':
+                    arr = s_param.s_mag.flatten()
                 else:
-                    ntw = d['ntwk']
-                
-                fname = d.get('custom_name') if d.get('is_average') else Path(p).stem
-                
-                for param in params:
-                    s_param = getattr(ntw, param)
-                    
-                    if mode == 'db':
-                        arr = s_param.s_db.flatten()
-                    elif mode == 'mag':
-                        arr = s_param.s_mag.flatten()
-                    else:
-                        arr = s_param.s_deg.flatten()
-                    
-                    result.append({
-                        'name': fname,
-                        'param': param,
-                        'label': f"{fname} - {param.upper()}",
-                        'freq': ntw.f,
-                        'values': arr,
-                        'color': d.get('line_color'),
-                        'linewidth': d.get('line_width', 1.0)
-                    })
-                
-            except Exception:
-                pass
-    
+                    arr = s_param.s_deg.flatten()
+                result.append({
+                    'name': fname,
+                    'param': param,
+                    'label': f"{fname} - {param.upper()}",
+                    'freq': ntw.f,
+                    'values': arr,
+                    'color': d.get('line_color'),
+                    'linewidth': d.get('line_width', 1.0)
+                })
+        except Exception as e:
+            print(f"overlay: {fname} skipped: {e}", file=sys.stderr)
+
     return result
 
 def format_overlay_text(data, mode):

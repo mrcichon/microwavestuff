@@ -1,5 +1,5 @@
+import sys
 import numpy as np
-from pathlib import Path
 
 def extract_time_data(files_list, freq_range_str, selected_param, use_db=True):
     """
@@ -23,56 +23,34 @@ def extract_time_data(files_list, freq_range_str, selected_param, use_db=True):
             'color': str or None
             'linewidth': float
     """
-    from sparams_io import loadFile
-    
+    from sparams_io import get_cached_network, display_name
+
     result = []
-    
+
     for v, p, d in files_list:
         if not v.get():
             continue
-        
-        ext = Path(p).suffix.lower()
-        
-        if not (d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']):
+
+        ntw = get_cached_network(p, d, freq_range_str)
+        if ntw is None:
             continue
-        
+
         try:
-            ntw_full = d.get('ntwk_full')
-            if ntw_full is None:
-                ntw_full = loadFile(p)
-                d['ntwk_full'] = ntw_full
-            
-            cached_range = d.get('cached_range')
-            if cached_range != freq_range_str:
-                ntw = ntw_full[freq_range_str]
-                d['ntwk'] = ntw
-                d['cached_range'] = freq_range_str
-            else:
-                ntw = d['ntwk']
-            
-            fname = d.get('custom_name') if d.get('is_average') else Path(p).stem
-            
             s_param = getattr(ntw, selected_param)
-            
-            freq_data = s_param.s_db.flatten() if use_db else s_param.s_mag.flatten()
-            t_ns = s_param.frequency.t_ns
-            time_data = s_param.s_time_db.flatten() if use_db else s_param.s_time_mag.flatten()
-            
             result.append({
-                'name': fname,
+                'name': display_name(p, d),
                 'path': p,
                 'freq': ntw.f,
-                'freq_data': freq_data,
-                't_ns': t_ns,
-                'time_data': time_data,
+                'freq_data': s_param.s_db.flatten() if use_db else s_param.s_mag.flatten(),
+                't_ns': s_param.frequency.t_ns,
+                'time_data': s_param.s_time_db.flatten() if use_db else s_param.s_time_mag.flatten(),
                 'network': ntw,
                 'color': d.get('line_color'),
                 'linewidth': d.get('line_width', 1.0)
             })
-            
-        except Exception:
-            pass
-    
+        except Exception as e:
+            print(f"time: {display_name(p, d)} skipped: {e}", file=sys.stderr)
+
     return result
 
 

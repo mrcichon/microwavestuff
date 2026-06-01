@@ -20,56 +20,37 @@ def extract_freq_data(files_list, freq_range_str, selected_params, use_db=True):
             'color': str or None
             'linewidth': float
     """
-    from sparams_io import loadFile
-    
+    from sparams_io import get_cached_network, display_name
+
     result = []
-    
+
     for v, p, d in files_list:
         if not v.get():
             continue
-        
+
         ext = Path(p).suffix.lower()
         loaded = False
-        
-        if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p', '.csv']:
-            try:
-                ntw_full = d.get('ntwk_full')
-                if ntw_full is None:
-                    ntw_full = loadFile(p)
-                    d['ntwk_full'] = ntw_full
-                
-                cached_range = d.get('cached_range')
-                if cached_range != freq_range_str:
-                    ntw = ntw_full[freq_range_str]
-                    d['ntwk'] = ntw
-                    d['cached_range'] = freq_range_str
-                else:
-                    ntw = d['ntwk']
-                
-                fname = d.get('custom_name') if d.get('is_average') else Path(p).stem
-                
-                params_data = {}
-                for param in selected_params:
-                    s_param = getattr(ntw, param, None)
-                    if s_param is None:
-                        continue
-                    arr = s_param.s_db.flatten() if use_db else s_param.s_mag.flatten()
-                    params_data[param] = arr
-                
-                if params_data:
-                    result.append({
-                        'name': fname,
-                        'path': p,
-                        'freq': ntw.f,
-                        'params': params_data,
-                        'color': d.get('line_color'),
-                        'linewidth': d.get('line_width', 1.0)
-                    })
-                    loaded = True
-                
-            except Exception:
-                pass
-        
+
+        ntw = get_cached_network(p, d, freq_range_str, exts=('.s1p', '.s2p', '.s3p', '.csv'))
+        if ntw is not None:
+            params_data = {}
+            for param in selected_params:
+                s_param = getattr(ntw, param, None)
+                if s_param is None:
+                    continue
+                params_data[param] = s_param.s_db.flatten() if use_db else s_param.s_mag.flatten()
+
+            if params_data:
+                result.append({
+                    'name': display_name(p, d),
+                    'path': p,
+                    'freq': ntw.f,
+                    'params': params_data,
+                    'color': d.get('line_color'),
+                    'linewidth': d.get('line_width', 1.0)
+                })
+                loaded = True
+
         if not loaded and ext == '.csv' and 's11' in selected_params:
             try:
                 import pandas as pd

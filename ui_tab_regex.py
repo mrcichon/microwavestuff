@@ -3,8 +3,8 @@ from tkinter import ttk, filedialog, messagebox
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors
-from pathlib import Path
 import re
+import sys
 
 from analysis_regex import (extract_regex_value, find_best_drop, compute_kendall_tau,
                             compute_max_displacement, mask_to_ranges, compute_small_diffs,
@@ -191,6 +191,7 @@ class TabRegex:
         self.update()
 
     def _get_files_data(self):
+        from sparams_io import get_cached_network, display_name
         fmin, fmax, sstr = self.get_freq_range()
         param = self.regex_param.get()
         pattern = self.regex_pattern.get()
@@ -199,7 +200,7 @@ class TabRegex:
         all_files_info = []
 
         for v, p, d in self.get_files():
-            fname = d.get('custom_name') if d.get('is_average') else Path(p).stem
+            fname = display_name(p, d)
             value = extract_regex_value(fname, pattern, self.regex_group.get())
 
             if v.get():
@@ -209,43 +210,28 @@ class TabRegex:
             if not v.get() or value is None:
                 continue
 
-            ext = Path(p).suffix.lower()
+            ntw = get_cached_network(p, d, sstr)
+            if ntw is None:
+                continue
 
-            if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
-                try:
-                    from sparams_io import loadFile
+            try:
+                if self.regex_gate.get():
+                    raw_data = getattr(ntw, param).time_gate(
+                        center=self.regex_gate_center.get(),
+                        span=self.regex_gate_span.get())
+                else:
+                    raw_data = getattr(ntw, param)
 
-                    ntw_full = d.get('ntwk_full')
-                    if ntw_full is None:
-                        ntw_full = loadFile(p)
-                        d['ntwk_full'] = ntw_full
+                if self.regex_phase.get():
+                    phase_deg = np.degrees(np.unwrap(np.angle(raw_data.s.flatten())))
+                    s_data = (phase_deg + 180) % 360 - 180
+                else:
+                    s_data = raw_data.s_db.flatten() if self.get_scale_mode() else raw_data.s_mag.flatten()
 
-                    ntw = ntw_full[sstr]
+                files_data.append((fname, value, ntw.f, s_data, d))
 
-                    if self.regex_gate.get():
-                        raw_param = getattr(ntw, param)
-                        gated_param = raw_param.time_gate(
-                            center=self.regex_gate_center.get(),
-                            span=self.regex_gate_span.get()
-                        )
-                        raw_data = gated_param
-                    else:
-                        raw_data = getattr(ntw, param)
-
-                    freq = ntw.f
-
-                    if self.regex_phase.get():
-                        phase_rad = np.unwrap(np.angle(raw_data.s.flatten()))
-                        phase_deg = np.degrees(phase_rad)
-                        s_data = (phase_deg + 180) % 360 - 180
-                    else:
-                        use_db = self.get_scale_mode()
-                        s_data = raw_data.s_db.flatten() if use_db else raw_data.s_mag.flatten()
-
-                    files_data.append((fname, value, freq, s_data, d))
-
-                except Exception:
-                    pass
+            except Exception as e:
+                print(f"regex: {fname} skipped: {e}", file=sys.stderr)
 
         self.all_files_info = all_files_info
         return files_data

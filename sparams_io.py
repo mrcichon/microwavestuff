@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 import pandas as pd
 import numpy as np
@@ -80,6 +81,30 @@ def loadFile(p):
         return rf.Network(t.name)        # skrf parses fully here, so the copy is no longer needed
     finally:
         os.unlink(t.name)
+
+def display_name(p, d):
+    return d.get('custom_name') if d.get('is_average') else Path(p).stem
+
+
+def get_cached_network(p, d, freq_range_str, exts=('.s1p', '.s2p', '.s3p')):
+    # load p once into d['ntwk_full'], slice to the range cached on d['ntwk'], return the
+    # slice. returns None (logging why) for non-matching files or on load failure.
+    ext = Path(p).suffix.lower()
+    if not (d.get('is_average', False) or ext in exts):
+        return None
+    try:
+        ntw_full = d.get('ntwk_full')
+        if ntw_full is None:
+            ntw_full = loadFile(p)
+            d['ntwk_full'] = ntw_full
+        if d.get('cached_range') != freq_range_str:
+            d['ntwk'] = ntw_full[freq_range_str]
+            d['cached_range'] = freq_range_str
+        return d['ntwk']
+    except Exception as e:
+        print(f"sparams_io: could not load {p}: {e}", file=sys.stderr)
+        return None
+
 
 def parse_polar_rms(path):
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
