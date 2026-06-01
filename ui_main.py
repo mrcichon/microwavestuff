@@ -24,7 +24,6 @@ from ui_tab_polar import TabPolar
 from ui_tab_rozpierdol import TabRozpierdol as TabOverlay
 from ui_tab_field import TabField
 
-ML_AVAILABLE = False
 
 class ValidatedDoubleVar(tk.DoubleVar):
     def __init__(self, *args, **kwargs):
@@ -143,8 +142,6 @@ class App(tk.Tk):
         self._create_overlap_tab()
         self._create_shape_tab()
         self._create_td_analysis_tab()
-        if ML_AVAILABLE:
-            self._create_ml_tab()
         self._create_polar_tab()
         self._create_overlay_tab()
         self._create_field_tab()
@@ -408,26 +405,6 @@ class App(tk.Tk):
         self.cvTDA.mpl_connect('button_press_event', self._onClickTDA)
         self._hook_marker_redraw(self.figTDA, self.cvTDA)
     
-    def _create_ml_tab(self):
-        frmM = ttk.Frame(self.nb)
-        self.nb.add(frmM, text="Model Training")
-        
-        self.figM = plt.figure(figsize=(12,5))
-        self.cvM = FigureCanvasTkAgg(self.figM, master=frmM)
-        self.cvM.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        
-        self.tbM = NavigationToolbar2Tk(self.cvM, frmM)
-        self.tbM.update()
-        self.tbM.pack(fill=tk.X)
-        
-        self.tab_ml = TabMLTraining(
-            parent=frmM,
-            fig=self.figM,
-            canvas=self.cvM,
-            get_files_func=self.get_files,
-            get_freq_range_func=self.get_freq_range
-        )
-        
     def _create_polar_tab(self):
         frmPolar = ttk.Frame(self.nb)
         self.nb.add(frmPolar, text="Polar Plots")
@@ -1205,8 +1182,6 @@ class App(tk.Tk):
             "Polar Plots": self.tab_polar,
             "S-Param Overlay": self.tab_overlay,
         }
-        if ML_AVAILABLE:
-            tab_map["Model Training"] = self.tab_ml
         return tab_map.get(name)
     
     def _updAll(self):

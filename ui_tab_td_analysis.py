@@ -21,9 +21,7 @@ class TabTDAnalysis:
         self.td_mark_peaks = tk.BooleanVar(value=True)
         
         self.td_analysis_data = None
-        self.td_markers = []
-        self.td_marker_text = []
-        
+
         self._build_ui()
         
     def _build_ui(self):
@@ -38,10 +36,8 @@ class TabTDAnalysis:
         
         ttk.Button(self.control_frame, text="Export Analysis",
                   command=self._export_analysis).pack(side=tk.LEFT, padx=10)
-        ttk.Button(self.control_frame, text="Clear Markers",
-                  command=self._clear_markers).pack(side=tk.LEFT, padx=2)
-        
-        ttk.Label(self.control_frame, text="Checks: t_max(S11) ≈ 2Ã—t_max(S21)",
+
+        ttk.Label(self.control_frame, text="Checks: t_max(S11) ~= 2*t_max(S21)",
                  font=("", 8), foreground="gray").pack(side=tk.LEFT, padx=10)
         
         
@@ -178,17 +174,6 @@ class TabTDAnalysis:
         
         self.fig.tight_layout()
         self.canvas.draw()
-    
-    def _clear_markers(self):
-        for m in self.td_markers:
-            try:
-                m['marker'].remove()
-                m['text'].remove()
-            except:
-                pass
-        self.td_markers.clear()
-        self.td_marker_text.clear()
-        self.update()
     
     def _export_analysis(self):
         if not self.td_analysis_data:

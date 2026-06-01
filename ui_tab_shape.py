@@ -2,7 +2,6 @@ import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import numpy as np
-import pandas as pd
 
 from analysis_shape import compute_shape_matrix, format_shape_text
 
@@ -275,25 +274,7 @@ class TabShapeComparison:
                         f.write(f"{ni}\t{nj}\t{matrix[i, j]:.6f}\t{lag}\n")
             
             messagebox.showinfo("Export complete", f"Matrix saved to {filename}")
-    
-    def _export_csv(self):
-        if self.shape_data is None:
-            messagebox.showinfo("No data", "No shape-comparison data to export")
-            return
-        
-        filename = filedialog.asksaveasfilename(
-            title="Save matrix as CSV",
-            defaultextension=".csv",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-        )
-        
-        if filename:
-            names = self.shape_data['names']
-            df = pd.DataFrame(self.shape_data['matrix'], index=names, columns=names)
-            df.to_csv(filename)
-            
-            messagebox.showinfo("Export complete", f"Matrix saved to {filename}")
-    
+
     def get_text_output(self):
         if self.shape_data is None:
             return ""
