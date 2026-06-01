@@ -12,6 +12,8 @@ import matplotlib.colors
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib.patches as mpatches
 
+import skrf_patch  # noqa: F401  installs the skrf time_gate/delay patch for any entry point
+
 from ui_tab_freq import TabFreq
 from ui_tab_time import TabTime
 from ui_tab_regex import TabRegex

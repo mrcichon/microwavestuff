@@ -16,7 +16,7 @@ def test_find_time_extrema_freq_domain():
 
 
 def test_extract_time_data_and_gate(files_list):
-    import mainscript  # noqa: F401  applies the skrf time_gate patch
+    import skrf_patch  # noqa: F401  applies the skrf time_gate patch
 
     raw = extract_time_data(files_list, "0.8-2.0ghz", "s11", use_db=True)
     assert len(raw) == 1

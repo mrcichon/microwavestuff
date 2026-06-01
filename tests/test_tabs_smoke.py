@@ -1,6 +1,5 @@
-"""Headless smoke for the live tabs: construct each, run update() on empty input and
-on the real file family, and check data actually reaches the plot. Needs a display
-(skips otherwise). These guard the load/slice/cache wiring the cleanup refactors."""
+# headless smoke for the live tabs: construct each, run update() on empty + the file family,
+# assert data reaches the plot. needs a display (skips otherwise).
 import tkinter as tk
 from tkinter import ttk
 
