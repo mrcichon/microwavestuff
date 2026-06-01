@@ -1,3 +1,4 @@
+import os
 import tempfile
 import pandas as pd
 import numpy as np
@@ -72,12 +73,13 @@ def loadFile(p):
         fx.append(ln if ln.lstrip().startswith(("!", "#")) else ln.replace(",", "."))
     
     t = tempfile.NamedTemporaryFile("w+", delete=False, suffix=Path(p).suffix, encoding="utf-8")
-    t.write("\n".join(fx))
-    t.flush()
-    t.close()
-    
-    network = rf.Network(t.name)
-    return network
+    try:
+        t.write("\n".join(fx))
+        t.flush()
+        t.close()
+        return rf.Network(t.name)        # skrf parses fully here, so the copy is no longer needed
+    finally:
+        os.unlink(t.name)
 
 def parse_polar_rms(path):
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
