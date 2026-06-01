@@ -8,7 +8,8 @@ import re
 
 from analysis_regex import (extract_regex_value, find_best_drop, compute_kendall_tau,
                             compute_max_displacement, mask_to_ranges, compute_small_diffs,
-                            format_regex_text)
+                            compute_congruence, congruence_template, mask_to_index_ranges,
+                            compute_shift_tracking, format_regex_text)
 
 
 class TabRegex:
@@ -45,6 +46,13 @@ class TabRegex:
         self.regex_tau_threshold = tk.DoubleVar(value=0.8)
         self.regex_disp = tk.BooleanVar(value=False)
         self.regex_disp_threshold = tk.IntVar(value=1)
+        self.regex_congru = tk.BooleanVar(value=False)
+        self.regex_congru_mode = tk.StringVar(value="vertical")
+        self.regex_congru_window = tk.IntVar(value=21)
+        self.regex_congru_threshold = tk.DoubleVar(value=0.9)
+        self.regex_congru_maxlag = tk.IntVar(value=10)
+        self.regex_track = tk.BooleanVar(value=False)
+        self.regex_track_mono = tk.DoubleVar(value=0.9)
 
         self.regex_ranges = []
         self.last_result = None
@@ -142,6 +150,34 @@ class TabRegex:
         ttk.Button(frame2, text="XXcm", width=6,
                    command=lambda: self._set_pattern(r'(\d+)cm')).pack(side=tk.LEFT, padx=2)
 
+        frame3 = ttk.Frame(self.control_frame)
+        frame3.pack(side=tk.TOP, fill=tk.X, pady=2)
+
+        ttk.Checkbutton(frame3, text="Shared shape",
+                         variable=self.regex_congru, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(frame3, text="Vert", value="vertical",
+                        variable=self.regex_congru_mode, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(frame3, text="Freq-shift", value="horizontal",
+                        variable=self.regex_congru_mode, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Label(frame3, text="Window:").pack(side=tk.LEFT, padx=(8, 2))
+        ttk.Spinbox(frame3, from_=3, to=201, increment=2, width=4,
+                     textvariable=self.regex_congru_window, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Label(frame3, text="Congr.≥").pack(side=tk.LEFT, padx=(8, 0))
+        congru_entry = ttk.Entry(frame3, textvariable=self.regex_congru_threshold, width=5)
+        congru_entry.pack(side=tk.LEFT, padx=2)
+        congru_entry.bind("<Return>", lambda e: self.update())
+        ttk.Label(frame3, text="Max shift:").pack(side=tk.LEFT, padx=(8, 2))
+        ttk.Spinbox(frame3, from_=1, to=200, width=4,
+                     textvariable=self.regex_congru_maxlag, command=self.update).pack(side=tk.LEFT, padx=2)
+
+        ttk.Separator(frame3, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Checkbutton(frame3, text="Track shift",
+                         variable=self.regex_track, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Label(frame3, text="Mono≥").pack(side=tk.LEFT, padx=(8, 0))
+        mono_entry = ttk.Entry(frame3, textvariable=self.regex_track_mono, width=5)
+        mono_entry.pack(side=tk.LEFT, padx=2)
+        mono_entry.bind("<Return>", lambda e: self.update())
+
     def _on_regex_change(self, event=None):
         pattern = self.regex_pattern.get()
         try:
@@ -216,7 +252,13 @@ class TabRegex:
 
     def update(self):
         self.fig.clf()
-        ax = self.fig.add_subplot(111)
+        self.ax_side = None
+        if self.regex_track.get():
+            gs = self.fig.add_gridspec(1, 4, wspace=0.32)
+            ax = self.fig.add_subplot(gs[0, :3])
+            self.ax_side = self.fig.add_subplot(gs[0, 3])
+        else:
+            ax = self.fig.add_subplot(111)
 
         files_data = self._get_files_data()
 
@@ -255,6 +297,35 @@ class TabRegex:
             disp_mask = disps <= self.regex_disp_threshold.get()
             disp_ranges = mask_to_ranges(disp_mask, freqs)
 
+        congru_ranges = None
+        congru_iranges = None
+        congru_mask = None
+        if self.regex_congru.get() and s_matrix.shape[0] >= 2:
+            mode = self.regex_congru_mode.get()
+            _, congru_mask = compute_congruence(
+                s_matrix,
+                window=self.regex_congru_window.get(),
+                threshold=self.regex_congru_threshold.get(),
+                mode=mode,
+                max_lag=self.regex_congru_maxlag.get())
+            congru_iranges = mask_to_index_ranges(congru_mask)
+            congru_ranges = [(freqs[a], freqs[b]) for a, b in congru_iranges]
+
+        track_mask = None
+        track_region = None
+        if self.regex_track.get() and s_matrix.shape[0] >= 3:
+            values = np.array([d[1] for d in files_data])
+            max_lag = self.regex_congru_maxlag.get()
+            # the analysis window must comfortably exceed the full shift span,
+            # so size it from Max shift rather than the (small) congruence window
+            track_window = max(self.regex_congru_window.get(), 3 * max_lag + 1)
+            track_mask, track_region = compute_shift_tracking(
+                s_matrix, values, freqs,
+                window=track_window,
+                max_lag=max_lag,
+                shape_thresh=self.regex_congru_threshold.get(),
+                mono_thresh=self.regex_track_mono.get())
+
         dropped_set = set(dropped_idx) if n_drop > 0 else set()
         legend_items = []
         for i, (fname, value, freq, s_data, file_dict) in enumerate(files_data):
@@ -291,6 +362,20 @@ class TabRegex:
         if disp_ranges:
             for f1, f2 in disp_ranges:
                 ax.axvspan(f1, f2, color='purple', alpha=0.2)
+
+        if congru_iranges:
+            mode = self.regex_congru_mode.get()
+            max_lag = self.regex_congru_maxlag.get()
+            for a, b in congru_iranges:
+                ax.axvspan(freqs[a], freqs[b], color='magenta', alpha=0.15)
+                vals, off = congruence_template(s_matrix[:, a:b + 1], mode, max_lag)
+                fseg = freqs[a + off: a + off + len(vals)]
+                ax.plot(fseg, vals, color='black', linestyle='--', linewidth=2.0, zorder=5)
+
+        if track_mask is not None:
+            for a, b in mask_to_index_ranges(track_mask):
+                ax.axvspan(freqs[a], freqs[b], color='cyan', alpha=0.2)
+            self._draw_shift_side(track_region)
 
         ax.set_xlabel("Frequency [Hz]")
         if self.regex_phase.get():
@@ -338,6 +423,36 @@ class TabRegex:
             self.last_result['disp_ranges'] = disp_ranges
             self.last_result['disp_threshold'] = self.regex_disp_threshold.get()
             self.last_result['disp_coverage'] = 100.0 * disp_mask.sum() / n_pts
+        if congru_ranges is not None:
+            self.last_result['congru_ranges'] = congru_ranges
+            self.last_result['congru_threshold'] = self.regex_congru_threshold.get()
+            self.last_result['congru_mode'] = self.regex_congru_mode.get()
+            self.last_result['congru_coverage'] = 100.0 * congru_mask.sum() / n_pts
+        if track_region is not None:
+            self.last_result['track'] = track_region
+
+    def _draw_shift_side(self, region):
+        ax = self.ax_side
+        if ax is None:
+            return
+        if region is None:
+            ax.text(0.5, 0.5, "no coherent\nsliding region",
+                    ha="center", va="center", color="gray", fontsize=9)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            return
+        v = region['values']
+        sh = region['shifts_hz'] / 1e6
+        ax.plot(v, sh, 'o', color='crimson')
+        slope = region['slope_hz_per_unit'] / 1e6
+        icpt = region['intercept'] / 1e6
+        xs = np.array([v.min(), v.max()])
+        ax.plot(xs, slope * xs + icpt, '--', color='gray')
+        ax.set_title(f"{slope:.1f} MHz/unit\nR²={region['r2']:.2f}  "
+                     f"@ {region['f0']/1e9:.2f}-{region['f1']/1e9:.2f} GHz", fontsize=8)
+        ax.set_xlabel("regex value", fontsize=8)
+        ax.set_ylabel("feature shift [MHz]", fontsize=8)
+        ax.grid(True)
 
     def _update_legend_panel(self, legend_items):
         for widget in self.legend_frame.winfo_children():
@@ -384,6 +499,9 @@ class TabRegex:
             all_ranges += [("kendall_tau", r) for r in self.last_result['tau_ranges']]
         if self.last_result and 'disp_ranges' in self.last_result:
             all_ranges += [("max_disp", r) for r in self.last_result['disp_ranges']]
+        if self.last_result and 'congru_ranges' in self.last_result:
+            mode = self.last_result.get('congru_mode', 'vertical')
+            all_ranges += [(f"shared_shape_{mode}", r) for r in self.last_result['congru_ranges']]
 
         if not all_ranges:
             messagebox.showinfo("No ranges", "No frequency ranges found.")
