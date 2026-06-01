@@ -1,5 +1,5 @@
-# headless smoke for the live tabs: construct each, run update() on empty + the file family,
-# assert data reaches the plot. needs a display (skips otherwise).
+# construct each live tab and run update() on empty + the real file family, asserting the
+# family reaches the plot and empty draws nothing. needs a display (skips otherwise).
 import tkinter as tk
 from tkinter import ttk
 

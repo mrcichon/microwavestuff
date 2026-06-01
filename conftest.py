@@ -64,7 +64,7 @@ def tk_root():
     matplotlib.use("TkAgg")
     try:
         root = tk.Tk()
-    except tk.TclError as e:               # no display / no X -> skip the smoke layer
+    except tk.TclError as e:               # no display / no X -> skip the tab tests
         pytest.skip(f"no display for tkinter: {e}")
     root.withdraw()
     yield root
