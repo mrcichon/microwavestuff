@@ -2,27 +2,7 @@ import sys
 import numpy as np
 
 def extract_time_data(files_list, freq_range_str, selected_param, use_db=True):
-    """
-    Extract time domain data for single S-parameter.
-    
-    Args:
-        files_list: list of (BooleanVar, path, metadata_dict)
-        freq_range_str: e.g. "0.4-4.0ghz"
-        selected_param: str like 's11' or 's21'
-        use_db: bool, if True use dB scale, else linear magnitude
-    
-    Returns:
-        list of dicts with keys:
-            'name': str
-            'path': str
-            'freq': ndarray (Hz)
-            'freq_data': ndarray (dB/mag values in freq domain)
-            't_ns': ndarray (time in ns)
-            'time_data': ndarray (dB/mag values in time domain)
-            'network': rf.Network (for gating)
-            'color': str or None
-            'linewidth': float
-    """
+    """Load each selected file's freq- and time-domain data for one S-param."""
     from sparams_io import get_cached_network, display_name
 
     result = []
@@ -55,24 +35,7 @@ def extract_time_data(files_list, freq_range_str, selected_param, use_db=True):
 
 
 def apply_time_gate(files_data, selected_param, center_ns, span_ns, use_db=True):
-    """
-    Apply time gating to frequency domain data.
-    
-    Args:
-        files_data: list from extract_time_data()
-        selected_param: str like 's11'
-        center_ns: float, gate center in ns
-        span_ns: float, gate span in ns
-        use_db: bool, if True use dB scale, else linear magnitude
-    
-    Returns:
-        list of dicts with keys:
-            'name': str
-            'freq': ndarray
-            'gated_data': ndarray (dB/mag values after gating)
-            'color': str or None
-            'linewidth': float
-    """
+    """Time-gate each file's S-param and return the gated frequency response."""
     result = []
     
     for file_entry in files_data:
@@ -99,25 +62,7 @@ def apply_time_gate(files_data, selected_param, center_ns, span_ns, use_db=True)
 
 def find_time_extrema(files_data, selected_param, freq_range_ghz, 
                       find_minima=True, find_maxima=True):
-    """
-    Find extrema in frequency domain (raw data).
-    
-    Args:
-        files_data: list from extract_time_data()
-        selected_param: str
-        freq_range_ghz: tuple (min_ghz, max_ghz)
-        find_minima: bool
-        find_maxima: bool
-    
-    Returns:
-        list of dicts with keys:
-            'type': 'min' or 'max'
-            'freq': frequency in Hz
-            'value': value in dB
-            'param': parameter name
-            'file': file name
-            'domain': 'freq_raw'
-    """
+    """Find raw freq-domain min/max for each file within the GHz range."""
     range_min_hz = freq_range_ghz[0] * 1e9
     range_max_hz = freq_range_ghz[1] * 1e9
     
@@ -162,19 +107,7 @@ def find_time_extrema(files_data, selected_param, freq_range_ghz,
 
 def find_gated_extrema(gated_data, freq_range_ghz, selected_param,
                        find_minima=True, find_maxima=True):
-    """
-    Find extrema in gated frequency domain data.
-    
-    Args:
-        gated_data: list from apply_time_gate()
-        freq_range_ghz: tuple (min_ghz, max_ghz)
-        selected_param: str
-        find_minima: bool
-        find_maxima: bool
-    
-    Returns:
-        list of dicts (same format as find_time_extrema with domain='freq_gated')
-    """
+    """Find gated freq-domain min/max for each file within the GHz range."""
     range_min_hz = freq_range_ghz[0] * 1e9
     range_max_hz = freq_range_ghz[1] * 1e9
     
@@ -218,17 +151,7 @@ def find_gated_extrema(gated_data, freq_range_ghz, selected_param,
 
 
 def format_time_text(extrema_list, freq_range_ghz, use_db=True):
-    """
-    Format time domain extrema as text.
-    
-    Args:
-        extrema_list: combined list from find_time_extrema and find_gated_extrema
-        freq_range_ghz: tuple (min_ghz, max_ghz)
-        use_db: bool, if True show dB units, else magnitude
-    
-    Returns:
-        str: formatted text
-    """
+    """Format the time/gated extrema list as text."""
     if not extrema_list:
         return ""
     

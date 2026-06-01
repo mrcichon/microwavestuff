@@ -1,16 +1,7 @@
 import numpy as np
 
 def find_td_peaks(files_data, time_limit_ns=50.0):
-    """
-    Find time domain peaks for S11 and S21.
-    
-    Args:
-        files_data: list of dicts with time domain data
-        time_limit_ns: time window limit in nanoseconds
-    
-    Returns:
-        list of analysis results
-    """
+    """Find the S11/S21 time-domain peaks and whether t_max(S11) ~= 2*t_max(S21)."""
     results = []
     
     for file_data in files_data:
@@ -62,7 +53,7 @@ def find_td_peaks(files_data, time_limit_ns=50.0):
 
 
 def check_peak_condition(s11_max_time, s21_max_time, tolerance=0.5):
-    """Check if t_max(S11) ≈ 2 * t_max(S21)."""
+    """Check if t_max(S11) ~= 2 * t_max(S21)."""
     if s11_max_time is None or s21_max_time is None:
         return None
     return abs(s11_max_time - 2*s21_max_time) <= tolerance

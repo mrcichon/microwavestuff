@@ -2,24 +2,7 @@ import numpy as np
 from pathlib import Path
 
 def extract_freq_data(files_list, freq_range_str, selected_params, use_db=True):
-    """
-    Extract frequency domain data from file list.
-    
-    Args:
-        files_list: list of (BooleanVar, path, metadata_dict)
-        freq_range_str: e.g. "0.4-4.0ghz"
-        selected_params: list of str like ['s11', 's21']
-        use_db: bool, if True use dB scale, else linear magnitude
-    
-    Returns:
-        list of dicts with keys:
-            'name': str
-            'path': str
-            'freq': ndarray
-            'params': dict mapping param_name -> values_array
-            'color': str or None
-            'linewidth': float
-    """
+    """Load each selected file and pull the chosen S-params into name/freq/params dicts."""
     from sparams_io import get_cached_network, display_name
 
     result = []
@@ -78,24 +61,7 @@ def extract_freq_data(files_list, freq_range_str, selected_params, use_db=True):
 
 
 def find_extrema(files_data, selected_params, freq_range_ghz, find_minima=True, find_maxima=True):
-    """
-    Find frequency extrema for each file and parameter.
-    
-    Args:
-        files_data: list from extract_freq_data()
-        selected_params: list of param names
-        freq_range_ghz: tuple (min_ghz, max_ghz)
-        find_minima: bool
-        find_maxima: bool
-    
-    Returns:
-        list of dicts with keys:
-            'type': 'min' or 'max'
-            'freq': frequency in Hz
-            'value': value in dB
-            'param': parameter name
-            'file': file name
-    """
+    """Find each param's min/max within the GHz range."""
     range_min_hz = freq_range_ghz[0] * 1e9
     range_max_hz = freq_range_ghz[1] * 1e9
     
@@ -143,17 +109,7 @@ def find_extrema(files_data, selected_params, freq_range_ghz, find_minima=True, 
 
 
 def format_freq_text(extrema_list, freq_range_ghz, use_db=True):
-    """
-    Format extrema data as text output.
-    
-    Args:
-        extrema_list: list from find_extrema()
-        freq_range_ghz: tuple (min_ghz, max_ghz)
-        use_db: bool, if True show dB units, else magnitude
-    
-    Returns:
-        str: formatted text
-    """
+    """Format the extrema list as text."""
     if not extrema_list:
         return ""
     
