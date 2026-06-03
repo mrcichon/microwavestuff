@@ -10,6 +10,8 @@ from analysis_regex import (extract_regex_value, find_best_drop, compute_kendall
                             compute_max_displacement, mask_to_ranges, compute_small_diffs,
                             compute_congruence, congruence_template, mask_to_index_ranges,
                             compute_shift_tracking, format_regex_text)
+from analysis_regex_stats import (format_perfile_range, format_perfile_single,
+                                  format_group_range, format_group_single)
 
 
 class TabRegex:
@@ -106,6 +108,8 @@ class TabRegex:
                          variable=self.regex_phase, command=self.update).pack(side=tk.LEFT, padx=2)
 
         ttk.Button(frame, text="Export", command=self._export_ranges).pack(side=tk.LEFT, padx=10)
+        ttk.Button(frame, text="Stats", command=self._open_stats).pack(side=tk.LEFT, padx=2)
+        ttk.Button(frame, text="Stats group", command=self._open_stats_group).pack(side=tk.LEFT, padx=2)
 
         frame2 = ttk.Frame(self.control_frame)
         frame2.pack(side=tk.TOP, fill=tk.X, pady=2)
@@ -527,3 +531,176 @@ class TabRegex:
                     f.write(f"{label} {start} {end}\n")
 
             messagebox.showinfo("Export complete", f"Ranges saved to {filename}")
+
+    def _open_stats(self):
+        self._stats_window(grouped=False)
+
+    def _open_stats_group(self):
+        self._stats_window(grouped=True)
+
+    def _stats_collect(self):
+        # selected files matching the pattern, each with its full (unsliced) network loaded
+        from sparams_io import loadFile
+        out = []
+        for v, p, d in self.get_files():
+            if not v.get():
+                continue
+            fname = d.get('custom_name') if d.get('is_average') else Path(p).stem
+            val = extract_regex_value(fname, self.regex_pattern.get(), self.regex_group.get())
+            if val is None:
+                continue
+            ext = Path(p).suffix.lower()
+            if not (d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']):
+                continue
+            try:
+                ntw_full = d.get('ntwk_full')
+                if ntw_full is None:
+                    ntw_full = loadFile(p)
+                    d['ntwk_full'] = ntw_full
+            except Exception:
+                continue
+            out.append((fname, val, ntw_full))
+        return out
+
+    def _stats_recalc(self, txt, mode_var, fmin_var, fmax_var, single_var, grouped):
+        param = self.regex_param.get()
+        pattern, gi = self.regex_pattern.get(), self.regex_group.get()
+        files = self._stats_collect()
+        report = "No files selected / matching pattern."
+        if files and mode_var.get() == "range":
+            fmin, fmax = fmin_var.get(), fmax_var.get()
+            sstr = f"{fmin}-{fmax}ghz"
+            curves = []
+            for name, val, full in files:
+                try:
+                    ntw = full[sstr]
+                    curves.append((name, val, ntw.f, getattr(ntw, param).s_db.flatten()))
+                except Exception:
+                    continue
+            if curves:
+                curves.sort(key=lambda x: x[1])
+                ref = max((c[2] for c in curves), key=len)
+                curves = [(n, v, ref, np.interp(ref, f, s)) for n, v, f, s in curves]
+                if grouped:
+                    groups = {}
+                    for n, v, f, s in curves:
+                        groups.setdefault(v, []).append((n, f, s))
+                    report = format_group_range(groups, fmin, fmax, pattern, gi)
+                else:
+                    report = format_perfile_range([(n, f, s) for n, v, f, s in curves], fmin, fmax)
+        elif files:
+            single = single_var.get()
+            vals = []
+            for name, val, full in files:
+                try:
+                    f = full.f
+                    s = getattr(full, param).s_db.flatten()
+                    i = int(np.argmin(np.abs(f - single * 1e9)))
+                    vals.append((name, val, float(s[i])))
+                except Exception:
+                    continue
+            if vals:
+                vals.sort(key=lambda x: x[1])
+                if grouped:
+                    groups = {}
+                    for n, v, vv in vals:
+                        groups.setdefault(v, []).append((n, vv))
+                    report = format_group_single(groups, single, pattern, gi)
+                else:
+                    report = format_perfile_single([(n, vv) for n, v, vv in vals], single)
+        txt.config(state=tk.NORMAL)
+        txt.delete("1.0", tk.END)
+        txt.insert(tk.END, report)
+        txt.config(state=tk.DISABLED)
+
+    def _stats_window(self, grouped):
+        win = tk.Toplevel(self.parent)
+        win.title("Regex Stats Group" if grouped else "Regex Stats")
+        win.geometry("760x620")
+
+        fmin0, fmax0, _ = self.get_freq_range()
+        mode_var = tk.StringVar(value="range")
+        fmin_var = tk.DoubleVar(value=fmin0)
+        fmax_var = tk.DoubleVar(value=fmax0)
+        single_var = tk.DoubleVar(value=round((fmin0 + fmax0) / 2, 4))
+
+        top = ttk.Frame(win)
+        top.pack(side=tk.TOP, fill=tk.X, padx=6, pady=6)
+        ttk.Label(top, text="Analysis:").pack(side=tk.LEFT)
+        ttk.Radiobutton(top, text="Range", value="range", variable=mode_var).pack(side=tk.LEFT)
+        ttk.Label(top, text="fmin[GHz]").pack(side=tk.LEFT, padx=(6, 1))
+        e1 = ttk.Entry(top, textvariable=fmin_var, width=7); e1.pack(side=tk.LEFT)
+        ttk.Label(top, text="fmax[GHz]").pack(side=tk.LEFT, padx=(6, 1))
+        e2 = ttk.Entry(top, textvariable=fmax_var, width=7); e2.pack(side=tk.LEFT)
+        ttk.Radiobutton(top, text="Single", value="single", variable=mode_var).pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Label(top, text="f[GHz]").pack(side=tk.LEFT, padx=(6, 1))
+        e3 = ttk.Entry(top, textvariable=single_var, width=7); e3.pack(side=tk.LEFT)
+
+        body = ttk.Frame(win)
+        body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        scroll = ttk.Scrollbar(body)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        txt = tk.Text(body, wrap="none", font=("Consolas", 9), yscrollcommand=scroll.set)
+        txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll.config(command=txt.yview)
+
+        def recalc():
+            self._stats_recalc(txt, mode_var, fmin_var, fmax_var, single_var, grouped)
+        ttk.Button(top, text="Recalc", command=recalc).pack(side=tk.LEFT, padx=10)
+        for e in (e1, e2, e3):
+            e.bind("<Return>", lambda ev: recalc())
+
+        bottom = ttk.Frame(win)
+        bottom.pack(side=tk.BOTTOM, fill=tk.X, padx=6, pady=4)
+        ttk.Button(bottom, text="Copy all",
+                   command=lambda: (win.clipboard_clear(), win.clipboard_append(txt.get("1.0", tk.END)))).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bottom, text="Save txt", command=lambda: self._stats_save(txt)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bottom, text="Export csv",
+                   command=lambda: self._stats_csv(mode_var, fmin_var, fmax_var, single_var)).pack(side=tk.LEFT, padx=2)
+        recalc()
+
+    def _stats_save(self, txt):
+        fn = filedialog.asksaveasfilename(defaultextension=".txt",
+                                          filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+        if fn:
+            with open(fn, "w") as f:
+                f.write(txt.get("1.0", tk.END))
+
+    def _stats_csv(self, mode_var, fmin_var, fmax_var, single_var):
+        import csv
+        files = self._stats_collect()
+        if not files:
+            messagebox.showinfo("No data", "Nothing to export")
+            return
+        fn = filedialog.asksaveasfilename(defaultextension=".csv",
+                                          filetypes=[("CSV files", "*.csv"), ("All files", "*.*")])
+        if not fn:
+            return
+        param = self.regex_param.get()
+        rows = []
+        if mode_var.get() == "range":
+            sstr = f"{fmin_var.get()}-{fmax_var.get()}ghz"
+            for name, val, full in files:
+                try:
+                    ntw = full[sstr]
+                    s = getattr(ntw, param).s_db.flatten()
+                    f = ntw.f
+                except Exception:
+                    continue
+                i = int(np.argmin(s))
+                rows.append([name, val, float(np.mean(s)), f[i] / 1e9, float(s[i])])
+            header = ["file", "regex_value", "mean_dB", "f_min_GHz", "min_dB"]
+        else:
+            sg = single_var.get()
+            for name, val, full in files:
+                f = full.f
+                s = getattr(full, param).s_db.flatten()
+                i = int(np.argmin(np.abs(f - sg * 1e9)))
+                rows.append([name, val, float(s[i])])
+            header = ["file", "regex_value", f"value_dB_at_{sg:g}GHz"]
+        rows.sort(key=lambda r: r[1])
+        with open(fn, "w", newline="") as fp:
+            w = csv.writer(fp)
+            w.writerow(header)
+            w.writerows(rows)
+        messagebox.showinfo("Export complete", f"Saved to {fn}")
