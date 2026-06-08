@@ -18,7 +18,7 @@ from ui_tab_polar import TabPolar
 from ui_tab_field import TabField
 
 
-def _cb(files):
+def _callbacks(files):
     return {
         "files": lambda: files,
         "freq": lambda: (0.8, 2.0, "0.8-2.0ghz"),
@@ -28,7 +28,7 @@ def _cb(files):
     }
 
 
-def _w(tk_root, ax=False, legend=False):
+def _make_widgets(tk_root, ax=False, legend=False):
     parent = ttk.Frame(tk_root)
     control = ttk.Frame(parent)
     fig = plt.figure()
@@ -43,33 +43,33 @@ def _w(tk_root, ax=False, legend=False):
 
 
 def _build(name, tk_root, files):
-    c = _cb(files)
+    c = _callbacks(files)
     if name == "freq":
-        p, fig = _w(tk_root, legend=True)
+        p, fig = _make_widgets(tk_root, legend=True)
         return TabFreq(*p, c["files"], c["freq"], c["legend"], c["scale"]), fig
     if name == "time":
-        p, fig = _w(tk_root, legend=True)
+        p, fig = _make_widgets(tk_root, legend=True)
         return TabTime(*p, c["files"], c["freq"], c["legend"], c["scale"]), fig
     if name == "regex":
-        p, fig = _w(tk_root, legend=True)
+        p, fig = _make_widgets(tk_root, legend=True)
         return TabRegex(*p, c["files"], c["freq"], c["legend"], c["scale"]), fig
     if name == "overlay":
-        p, fig = _w(tk_root, legend=True)
+        p, fig = _make_widgets(tk_root, legend=True)
         return TabRozpierdol(*p, c["files"], c["freq"], c["legend"]), fig
     if name == "shape":
-        p, fig = _w(tk_root)
+        p, fig = _make_widgets(tk_root)
         return TabShapeComparison(*p, c["files"], c["freq"], c["scale"]), fig
     if name == "td":
-        p, fig = _w(tk_root)
+        p, fig = _make_widgets(tk_root)
         return TabTDAnalysis(*p, c["files"], c["freq"]), fig
     if name == "overlap":
-        p, fig = _w(tk_root, ax=True)
+        p, fig = _make_widgets(tk_root, ax=True)
         return TabOverlap(*p, c["files"], c["freq"], c["regex"]), fig
     if name == "polar":
-        p, fig = _w(tk_root, ax=True)
+        p, fig = _make_widgets(tk_root, ax=True)
         return TabPolar(*p), fig
     if name == "field":
-        p, fig = _w(tk_root, ax=True)
+        p, fig = _make_widgets(tk_root, ax=True)
         return TabField(*p), fig
     raise KeyError(name)
 

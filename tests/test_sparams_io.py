@@ -24,9 +24,7 @@ def test_loadfile_handles_comma_decimals(comma_s2p, sample_network):
 
 
 def test_loadfile_does_not_leak_tempfiles(sample_s2p, tmp_path, monkeypatch):
-    # loadFile writes a normalized copy to the temp dir to hand to skrf; it must not
-    # leave that copy behind. currently it does (delete=False, never unlinked) -> this
-    # is the HDD-clogging bug, so this test is RED until loadFile is fixed.
+    # loadFile writes a normalized temp copy for skrf; it must unlink it, not leave it behind
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     for _ in range(3):
         loadFile(str(sample_s2p))
