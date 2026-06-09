@@ -417,9 +417,17 @@ class TabRegex:
                 ax.legend(handles, lbls, loc='best', ncol=ncol, fontsize=8, framealpha=0.9)
 
         self.fig.tight_layout()
+        # rebuild the toolbar's view history for the fresh axes: full view = home/back,
+        # the restored zoom on top so back/home un-zoom and forward re-zooms
+        tb = getattr(self.canvas, "toolbar", None)
+        if tb is not None:
+            tb.update()
+            tb.push_current()
         if keep_view is not None:
             ax.set_xlim(keep_view[0])
             ax.set_ylim(keep_view[1])
+            if tb is not None:
+                tb.push_current()
         self.canvas.draw()
 
         self._update_legend_panel(legend_items)
