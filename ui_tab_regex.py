@@ -55,6 +55,8 @@ class TabRegex:
         self.regex_congru_maxlag = tk.IntVar(value=10)
         self.regex_track = tk.BooleanVar(value=False)
         self.regex_track_mono = tk.DoubleVar(value=0.9)
+        self.regex_envelope = tk.BooleanVar(value=False)
+        self.regex_envelope_n = tk.IntVar(value=5)
 
         self.regex_ranges = []
         self.last_result = None
@@ -106,6 +108,11 @@ class TabRegex:
                      textvariable=self.regex_n_drop, command=self.update).pack(side=tk.LEFT, padx=2)
         ttk.Checkbutton(frame, text="Phase",
                          variable=self.regex_phase, command=self.update).pack(side=tk.LEFT, padx=2)
+        ttk.Checkbutton(frame, text="Envelope",
+                         variable=self.regex_envelope, command=self.update).pack(side=tk.LEFT, padx=(8, 2))
+        ttk.Label(frame, text="N").pack(side=tk.LEFT)
+        ttk.Spinbox(frame, from_=1, to=999, width=4,
+                     textvariable=self.regex_envelope_n, command=self.update).pack(side=tk.LEFT, padx=2)
 
         ttk.Button(frame, text="Export", command=self._export_ranges).pack(side=tk.LEFT, padx=10)
         ttk.Button(frame, text="Stats", command=self._open_stats).pack(side=tk.LEFT, padx=2)
@@ -246,6 +253,10 @@ class TabRegex:
                         use_db = self.get_scale_mode()
                         s_data = raw_data.s_db.flatten() if use_db else raw_data.s_mag.flatten()
 
+                    if self.regex_envelope.get():
+                        from scipy.ndimage import uniform_filter1d
+                        s_data = uniform_filter1d(s_data, size=max(1, self.regex_envelope_n.get()), mode="nearest")
+
                     files_data.append((fname, value, freq, s_data, d))
 
                 except Exception:
@@ -255,6 +266,12 @@ class TabRegex:
         return files_data
 
     def update(self):
+        # keep the current zoom across replots: if the user zoomed/panned (autoscale off),
+        # remember the view and restore it after redrawing. Home on the toolbar resets it.
+        keep_view = None
+        if self.fig.axes and not self.fig.axes[0].get_autoscale_on():
+            keep_view = (self.fig.axes[0].get_xlim(), self.fig.axes[0].get_ylim())
+
         self.fig.clf()
         self.ax_side = None
         if self.regex_track.get():
@@ -405,6 +422,17 @@ class TabRegex:
                 ax.legend(handles, lbls, loc='best', ncol=ncol, fontsize=8, framealpha=0.9)
 
         self.fig.tight_layout()
+        # rebuild the toolbar's view history for the fresh axes: full view = home/back,
+        # the restored zoom on top so back/home un-zoom and forward re-zooms
+        tb = getattr(self.canvas, "toolbar", None)
+        if tb is not None:
+            tb.update()
+            tb.push_current()
+        if keep_view is not None:
+            ax.set_xlim(keep_view[0])
+            ax.set_ylim(keep_view[1])
+            if tb is not None:
+                tb.push_current()
         self.canvas.draw()
 
         self._update_legend_panel(legend_items)
