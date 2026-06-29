@@ -12,7 +12,7 @@ from ui_tab_time import TabTime
 from ui_tab_regex import TabRegex
 from ui_tab_shape import TabShapeComparison
 from ui_tab_td_analysis import TabTDAnalysis
-from ui_tab_rozpierdol import TabRozpierdol
+from ui_tab_overlay import TabOverlay
 from ui_tab_overlap import TabOverlap
 from ui_tab_polar import TabPolar
 from ui_tab_field import TabField
@@ -55,7 +55,7 @@ def _build(name, tk_root, files):
         return TabRegex(*p, c["files"], c["freq"], c["legend"], c["scale"]), fig
     if name == "overlay":
         p, fig = _make_widgets(tk_root, legend=True)
-        return TabRozpierdol(*p, c["files"], c["freq"], c["legend"]), fig
+        return TabOverlay(*p, c["files"], c["freq"], c["legend"]), fig
     if name == "shape":
         p, fig = _make_widgets(tk_root)
         return TabShapeComparison(*p, c["files"], c["freq"], c["scale"]), fig

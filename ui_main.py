@@ -21,7 +21,7 @@ from ui_tab_overlap import TabOverlap
 from ui_tab_shape import TabShapeComparison
 from ui_tab_td_analysis import TabTDAnalysis
 from ui_tab_polar import TabPolar
-from ui_tab_rozpierdol import TabRozpierdol as TabOverlay
+from ui_tab_overlay import TabOverlay
 from ui_tab_field import TabField
 
 
