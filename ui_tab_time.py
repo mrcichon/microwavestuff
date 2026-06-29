@@ -182,7 +182,7 @@ class TabTime:
         for line in self.extrema_lines:
             try:
                 line.remove()
-            except:
+            except Exception:
                 pass
         self.extrema_lines.clear()
         

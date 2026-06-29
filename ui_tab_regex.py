@@ -194,7 +194,7 @@ class TabRegex:
         try:
             re.compile(pattern)
             self.regex_entry.configure(foreground="black")
-        except:
+        except Exception:
             self.regex_entry.configure(foreground="red")
 
     def _set_pattern(self, pattern):

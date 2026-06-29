@@ -945,7 +945,7 @@ class App(tk.Tk):
                     d['ntwk_full'] = ntw_full
                 networks.append(ntw_full)
                 v.set(False)
-            except:
+            except Exception:
                 pass
         
         if len(networks) < 2:
@@ -995,7 +995,7 @@ class App(tk.Tk):
             try:
                 ntw = loadFile(filepath)
                 networks.append(ntw)
-            except:
+            except Exception:
                 pass
         
         if len(networks) < 2:
@@ -1090,7 +1090,7 @@ class App(tk.Tk):
                         try:
                             ntw = loadFile(filepath)
                             networks.append(ntw)
-                        except:
+                        except Exception:
                             pass
                     
                     if len(networks) < 2:
@@ -1429,7 +1429,7 @@ class App(tk.Tk):
             try:
                 rgb = matplotlib.colors.to_rgb(current_color)
                 r, g, b = [int(x * 255) for x in rgb]
-            except:
+            except Exception:
                 r, g, b = 128, 128, 128
         else:
             r, g, b = 128, 128, 128

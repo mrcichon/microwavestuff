@@ -8,7 +8,7 @@ def extract_regex_value(filename, pattern, group_idx=1):
         match = re.search(pattern, filename)
         if match and group_idx <= len(match.groups()):
             return float(match.group(group_idx))
-    except:
+    except Exception:
         pass
     return None
 
