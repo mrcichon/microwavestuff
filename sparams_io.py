@@ -1,5 +1,6 @@
 import os
 import sys
+import colorsys
 import tempfile
 import pandas as pd
 import numpy as np
@@ -91,7 +92,12 @@ PALETTE = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
            '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
 
 def color_for(i):
-    return PALETTE[i % len(PALETTE)]
+    if i < len(PALETTE):
+        return PALETTE[i]
+    # past the palette, step the hue by the golden angle so no two files ever match
+    h = (i * 0.61803398875) % 1.0
+    r, g, b = colorsys.hsv_to_rgb(h, 0.65, 0.80)
+    return f'#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}'
 
 def curve_color(d):
     # user override beats the color assigned at add time

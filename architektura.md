@@ -36,9 +36,10 @@ Wpis w `self.fls` to krotka `(BooleanVar, path, dict)`:
   (`line_color`, `auto_color`, `line_width`), `overlay_params`, a dla uśrednień
   `is_average`, `custom_name`, `source_files`.
 
-Kolory: `auto_color` jest przydzielany raz przy dodaniu pliku (paleta w
-`sparams_io.PALETTE`, licznik `App.colorCounter`) i nie zmienia się przy dodawaniu
-ani usuwaniu plików. `line_color` to ręczny override z menu pod prawym przyciskiem.
+Kolory: `auto_color` jest przydzielany raz przy dodaniu pliku (`sparams_io.color_for`,
+licznik `App.colorCounter`) i nie zmienia się przy dodawaniu ani usuwaniu plików.
+Pierwsze 10 plików dostaje tab10 z `sparams_io.PALETTE`, kolejne hue krokiem złotego
+kąta, więc kolory nigdy się nie powtarzają. `line_color` to ręczny override z menu pod prawym przyciskiem.
 Zakładki rozwiązują kolor przez `sparams_io.curve_color(d)` (`line_color` wygrywa).
 Wyjątek: zakładka regex używa gradientu viridis po posortowanej wartości z regexa,
 bo tam kolejność jest treścią wykresu.

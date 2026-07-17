@@ -1,10 +1,10 @@
 from sparams_io import PALETTE, color_for, curve_color
 
 
-def test_color_for_cycles_palette():
-    assert color_for(0) == PALETTE[0]
-    assert color_for(len(PALETTE)) == PALETTE[0]
-    assert color_for(3) == color_for(3 + len(PALETTE))
+def test_color_for_starts_with_palette_then_stays_unique():
+    assert [color_for(i) for i in range(len(PALETTE))] == PALETTE
+    colors = [color_for(i) for i in range(50)]
+    assert len(set(colors)) == 50
 
 
 def test_curve_color_override_beats_auto():
