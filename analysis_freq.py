@@ -3,7 +3,7 @@ from pathlib import Path
 
 def extract_freq_data(files_list, freq_range_str, selected_params, use_db=True):
     """Load each selected file and pull the chosen S-params into name/freq/params dicts."""
-    from sparams_io import get_cached_network, display_name
+    from sparams_io import get_cached_network, display_name, curve_color
 
     result = []
 
@@ -29,7 +29,7 @@ def extract_freq_data(files_list, freq_range_str, selected_params, use_db=True):
                     'path': p,
                     'freq': ntw.f,
                     'params': params_data,
-                    'color': d.get('line_color'),
+                    'color': curve_color(d),
                     'linewidth': d.get('line_width', 1.0)
                 })
                 loaded = True
@@ -50,7 +50,7 @@ def extract_freq_data(files_list, freq_range_str, selected_params, use_db=True):
                     'path': p,
                     'freq': freq,
                     'params': {'s11': arr},
-                    'color': d.get('line_color'),
+                    'color': curve_color(d),
                     'linewidth': d.get('line_width', 1.0)
                 })
                 

@@ -86,6 +86,18 @@ def display_name(p, d):
     return d.get('custom_name') if d.get('is_average') else Path(p).stem
 
 
+# matplotlib's default cycle (tab10); files keep the color they got when added
+PALETTE = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+           '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+
+def color_for(i):
+    return PALETTE[i % len(PALETTE)]
+
+def curve_color(d):
+    # user override beats the color assigned at add time
+    return d.get('line_color') or d.get('auto_color')
+
+
 def get_cached_network(p, d, freq_range_str, exts=('.s1p', '.s2p', '.s3p')):
     # load p once into d['ntwk_full'], slice to the range cached on d['ntwk'], return the
     # slice. returns None (logging why) for non-matching files or on load failure.

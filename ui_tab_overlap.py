@@ -3,7 +3,6 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from pathlib import Path
-from itertools import cycle
 
 from analysis_overlap import parse_frequency_file, find_overlaps, format_overlap_text
 
@@ -18,8 +17,9 @@ class TabOverlap:
         self.get_files = get_files_func
         self.get_freq_range = get_freq_range_func
         self.get_regex_tab = get_regex_tab_func
-        
+
         self.overlap_data = {}
+        self.set_colors = {}  # name -> color, assigned once so sets keep their color
         self.last_result = None
         
         self._build_ui()
@@ -56,6 +56,7 @@ class TabOverlap:
             return
         
         self.overlap_data = {}
+        self.set_colors = {}
         for filepath in files:
             key = Path(filepath).stem.split('_')[0]
             self.overlap_data[key] = parse_frequency_file(filepath)
@@ -106,6 +107,7 @@ class TabOverlap:
     
     def _clear_plot(self):
         self.overlap_data = {}
+        self.set_colors = {}
         self.last_result = None
         self.update()
     
@@ -124,7 +126,7 @@ class TabOverlap:
             self.info_text.config(state=tk.DISABLED)
             return
         
-        colors = cycle(['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray'])
+        palette = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
         y_pos = 0
         legend_handles = []
         all_freqs = []
@@ -139,7 +141,7 @@ class TabOverlap:
             self.ax.axvspan(start, end, color='green', alpha=0.2, zorder=0)
         
         for name, ranges in sorted(self.overlap_data.items()):
-            color = next(colors)
+            color = self.set_colors.setdefault(name, palette[len(self.set_colors) % len(palette)])
             if not ranges:
                 y_pos += 1
                 continue

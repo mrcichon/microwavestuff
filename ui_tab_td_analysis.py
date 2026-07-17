@@ -48,7 +48,7 @@ class TabTDAnalysis:
     def _get_files_data(self):
         fmin, fmax, sstr = self.get_freq_range()
         
-        from sparams_io import get_cached_network, display_name
+        from sparams_io import get_cached_network, display_name, curve_color
 
         files_data = []
         for v, p, d in self.get_files():
@@ -68,7 +68,7 @@ class TabTDAnalysis:
                     'name': display_name(p, d),
                     's11_time': {'t_ns': t_ns, 'values': ntw.s11.s_time_db.flatten()},
                     's21_time': s21_time_data,
-                    'color': d.get('line_color'),
+                    'color': curve_color(d),
                     'linewidth': d.get('line_width', 1.0)
                 })
             except Exception as e:

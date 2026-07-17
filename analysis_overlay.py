@@ -2,7 +2,7 @@ import sys
 import numpy as np
 
 def extract_overlay_data(files_list, freq_range_str, file_params_map, mode):
-    from sparams_io import get_cached_network, display_name
+    from sparams_io import get_cached_network, display_name, curve_color
 
     result = []
 
@@ -34,7 +34,7 @@ def extract_overlay_data(files_list, freq_range_str, file_params_map, mode):
                     'label': f"{fname} - {param.upper()}",
                     'freq': ntw.f,
                     'values': arr,
-                    'color': d.get('line_color'),
+                    'color': curve_color(d),
                     'linewidth': d.get('line_width', 1.0)
                 })
         except Exception as e:

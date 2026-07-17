@@ -344,13 +344,15 @@ class TabRegex:
 
         dropped_set = set(dropped_idx) if n_drop > 0 else set()
         legend_items = []
+        # gradient follows the sorted regex value, so colors shift when files are
+        # added; that ordering is the point here, unlike the per-file colors elsewhere
+        cmap = plt.cm.viridis(np.linspace(0, 1, len(files_data)))
         for i, (fname, value, freq, s_data, file_dict) in enumerate(files_data):
             is_dropped = i in dropped_set
             kwargs = {'label': fname}
             if file_dict.get('line_color'):
                 kwargs['color'] = file_dict['line_color']
             else:
-                cmap = plt.cm.viridis(np.linspace(0, 1, len(files_data)))
                 kwargs['color'] = cmap[i]
             if file_dict.get('line_width', 1.0) != 1.0:
                 kwargs['linewidth'] = file_dict['line_width']

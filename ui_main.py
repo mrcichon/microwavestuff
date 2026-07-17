@@ -53,7 +53,8 @@ class App(tk.Tk):
         self.fmin = ValidatedDoubleVar(value=0.4)
         self.fmax = ValidatedDoubleVar(value=4.0)
         self.avgCounter = 0
-        
+        self.colorCounter = 0
+
         self.current_tab = None
         self.marker_data = {}
         self._marker_figs = set()
@@ -787,6 +788,13 @@ class App(tk.Tk):
     def get_scale_mode(self):
         return self.use_db_scale.get()
     
+    def _nextColor(self):
+        # hand out one palette color per added file, never reused on reorder/delete
+        from sparams_io import color_for
+        c = color_for(self.colorCounter)
+        self.colorCounter += 1
+        return c
+
     def _addFiles(self):
         pth = filedialog.askopenfilenames(
             title="Wybierz pliki Touchstone (.sNp, .s1p, .csv)",
@@ -801,7 +809,7 @@ class App(tk.Tk):
                 chk = ttk.Checkbutton(self.fbox, text=Path(p).name, variable=v, command=self._updAll)
                 chk.pack(anchor="w")
                 chk.bind("<Button-3>", lambda e, path=p: self._showStyleMenu(e, path))
-                d = {'line_color': None, 'line_width': 1.0}
+                d = {'line_color': None, 'auto_color': self._nextColor(), 'line_width': 1.0}
                 self.fls.append((v, p, d))
         self.fileListCanvas.configure(scrollregion=self.fileListCanvas.bbox("all"))
         self._updAll()
@@ -969,6 +977,7 @@ class App(tk.Tk):
             'is_average': True,
             'source_files': [self.fls[i][1] for i in indices],
             'line_color': None,
+            'auto_color': self._nextColor(),
             'line_width': 2.0,
             'custom_name': name
         }
@@ -1019,6 +1028,7 @@ class App(tk.Tk):
             'is_average': True,
             'source_files': list(files),
             'line_color': None,
+            'auto_color': self._nextColor(),
             'line_width': 2.0,
             'custom_name': name
         }
@@ -1114,6 +1124,7 @@ class App(tk.Tk):
                         'is_average': True,
                         'source_files': file_list,
                         'line_color': None,
+                        'auto_color': self._nextColor(),
                         'line_width': 2.0,
                         'custom_name': avg_name
                     }
@@ -1424,7 +1435,8 @@ class App(tk.Tk):
         dialog.transient(self)
         dialog.grab_set()
         
-        current_color = file_data.get('line_color')
+        from sparams_io import curve_color
+        current_color = curve_color(file_data)
         if current_color:
             try:
                 rgb = matplotlib.colors.to_rgb(current_color)

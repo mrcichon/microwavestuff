@@ -3,7 +3,7 @@ import numpy as np
 
 def extract_time_data(files_list, freq_range_str, selected_param, use_db=True):
     """Load each selected file's freq- and time-domain data for one S-param."""
-    from sparams_io import get_cached_network, display_name
+    from sparams_io import get_cached_network, display_name, curve_color
 
     result = []
 
@@ -25,7 +25,7 @@ def extract_time_data(files_list, freq_range_str, selected_param, use_db=True):
                 't_ns': s_param.frequency.t_ns,
                 'time_data': s_param.s_time_db.flatten() if use_db else s_param.s_time_mag.flatten(),
                 'network': ntw,
-                'color': d.get('line_color'),
+                'color': curve_color(d),
                 'linewidth': d.get('line_width', 1.0)
             })
         except Exception as e:

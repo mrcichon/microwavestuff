@@ -33,8 +33,15 @@ Wpis w `self.fls` to krotka `(BooleanVar, path, dict)`:
 - `BooleanVar`: zaznaczenie pliku (checkbox na liście),
 - `path`: ścieżka, albo sztuczny `<average_N>` dla uśrednień,
 - `dict`: stan per plik. Cache (`ntwk_full`, `ntwk`, `cached_range`), styl linii
-  (`line_color`, `line_width`), `overlay_params`, a dla uśrednień `is_average`,
-  `custom_name`, `source_files`.
+  (`line_color`, `auto_color`, `line_width`), `overlay_params`, a dla uśrednień
+  `is_average`, `custom_name`, `source_files`.
+
+Kolory: `auto_color` jest przydzielany raz przy dodaniu pliku (paleta w
+`sparams_io.PALETTE`, licznik `App.colorCounter`) i nie zmienia się przy dodawaniu
+ani usuwaniu plików. `line_color` to ręczny override z menu pod prawym przyciskiem.
+Zakładki rozwiązują kolor przez `sparams_io.curve_color(d)` (`line_color` wygrywa).
+Wyjątek: zakładka regex używa gradientu viridis po posortowanej wartości z regexa,
+bo tam kolejność jest treścią wykresu.
 
 Słownik jest współdzielony. Jak jedna zakładka wczyta i potnie network, zapis zostaje w
 słowniku i następna bierze gotowe.
