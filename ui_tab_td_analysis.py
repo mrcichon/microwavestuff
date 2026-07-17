@@ -1,7 +1,7 @@
+import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import numpy as np
-from pathlib import Path
 
 from analysis_td_peaks import find_td_peaks, format_td_analysis_text
 
@@ -21,10 +21,10 @@ class TabTDAnalysis:
         self.td_mark_peaks = tk.BooleanVar(value=True)
         
         self.td_analysis_data = None
-        self.td_markers = []
-        self.td_marker_text = []
-        
+
         self._build_ui()
+        from ui_util import bind_enter
+        bind_enter(self.control_frame, self.update)
         
     def _build_ui(self):
         
@@ -38,10 +38,8 @@ class TabTDAnalysis:
         
         ttk.Button(self.control_frame, text="Export Analysis",
                   command=self._export_analysis).pack(side=tk.LEFT, padx=10)
-        ttk.Button(self.control_frame, text="Clear Markers",
-                  command=self._clear_markers).pack(side=tk.LEFT, padx=2)
-        
-        ttk.Label(self.control_frame, text="Checks: t_max(S11) ≈ 2Ã—t_max(S21)",
+
+        ttk.Label(self.control_frame, text="Checks: t_max(S11) ~= 2*t_max(S21)",
                  font=("", 8), foreground="gray").pack(side=tk.LEFT, padx=10)
         
         
@@ -50,54 +48,32 @@ class TabTDAnalysis:
     def _get_files_data(self):
         fmin, fmax, sstr = self.get_freq_range()
         
+        from sparams_io import get_cached_network, display_name, curve_color
+
         files_data = []
         for v, p, d in self.get_files():
             if not v.get():
                 continue
-            
-            ext = Path(p).suffix.lower()
-            if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
-                try:
-                    from sparams_io import loadFile
-                    
-                    ntw_full = d.get('ntwk_full')
-                    if ntw_full is None:
-                        ntw_full = loadFile(p)
-                        d['ntwk_full'] = ntw_full
-                    
-                    cached_range = d.get('cached_range')
-                    if cached_range != sstr:
-                        ntw = ntw_full[sstr]
-                        d['ntwk'] = ntw
-                        d['cached_range'] = sstr
-                    else:
-                        ntw = d['ntwk']
-                    
-                    fname = d.get('custom_name') if d.get('is_average') else Path(p).stem
-                    
-                    # Get S11 time domain
-                    s11_td = ntw.s11
-                    t_ns = s11_td.frequency.t_ns
-                    s11_time_db = s11_td.s_time_db.flatten()
-                    
-                    # Get S21 if available
-                    s21_time_data = None
-                    if ntw.nports >= 2:
-                        s21_td = ntw.s21
-                        s21_time_db = s21_td.s_time_db.flatten()
-                        s21_time_data = {'t_ns': t_ns, 'values': s21_time_db}
-                    
-                    files_data.append({
-                        'name': fname,
-                        's11_time': {'t_ns': t_ns, 'values': s11_time_db},
-                        's21_time': s21_time_data,
-                        'color': d.get('line_color'),
-                        'linewidth': d.get('line_width', 1.0)
-                    })
-                    
-                except Exception:
-                    pass
-        
+
+            ntw = get_cached_network(p, d, sstr)
+            if ntw is None:
+                continue
+
+            try:
+                t_ns = ntw.s11.frequency.t_ns
+                s21_time_data = None
+                if ntw.nports >= 2:
+                    s21_time_data = {'t_ns': t_ns, 'values': ntw.s21.s_time_db.flatten()}
+                files_data.append({
+                    'name': display_name(p, d),
+                    's11_time': {'t_ns': t_ns, 'values': ntw.s11.s_time_db.flatten()},
+                    's21_time': s21_time_data,
+                    'color': curve_color(d),
+                    'linewidth': d.get('line_width', 1.0)
+                })
+            except Exception as e:
+                print(f"td: {display_name(p, d)} skipped: {e}", file=sys.stderr)
+
         return files_data
     
     def update(self):
@@ -200,17 +176,6 @@ class TabTDAnalysis:
         
         self.fig.tight_layout()
         self.canvas.draw()
-    
-    def _clear_markers(self):
-        for m in self.td_markers:
-            try:
-                m['marker'].remove()
-                m['text'].remove()
-            except:
-                pass
-        self.td_markers.clear()
-        self.td_marker_text.clear()
-        self.update()
     
     def _export_analysis(self):
         if not self.td_analysis_data:

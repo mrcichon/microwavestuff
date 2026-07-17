@@ -2,20 +2,7 @@ import numpy as np
 from scipy import signal
 
 def compute_shape_matrix(files_data, param, metric='xcorr', normalize=True, max_lag=None, adaptive_params=None):
-    """
-    Compute shape comparison matrix.
-    
-    Args:
-        files_data: list of dicts with 'name', 'signal', 'freq'
-        param: parameter name
-        metric: 'xcorr', 'l1', 'l2', 'al1', 'al2'
-        normalize: whether to normalize
-        max_lag: max lag for cross correlation
-        adaptive_params: dict with 'alpha', 'sigma', 'gamma', 'w_min', 'activity_type'
-    
-    Returns:
-        dict with matrix, lag matrix, weights, etc
-    """
+    """Build the NxN similarity/distance matrix between files for the chosen metric."""
     n = len(files_data)
     if n < 2:
         return None

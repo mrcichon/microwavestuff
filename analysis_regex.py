@@ -8,7 +8,7 @@ def extract_regex_value(filename, pattern, group_idx=1):
         match = re.search(pattern, filename)
         if match and group_idx <= len(match.groups()):
             return float(match.group(group_idx))
-    except:
+    except Exception:
         pass
     return None
 
@@ -173,7 +173,7 @@ def compute_shift_tracking(s_matrix, values, freqs, window=41, max_lag=60,
     for k in range(m):
         lo, hi = max(0, k - h), min(m, k + h + 1)
         W = s_matrix[:, lo:hi]
-        if W.shape[1] <= 2 * max_lag + 2:
+        if W.shape[1] < 4:
             continue
         lags = _window_lags(W, max_lag, ref_idx)
         if lags.max() - lags.min() < min_shift_samples:   # must actually diverge in position

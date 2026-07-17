@@ -2,74 +2,38 @@ import numpy as np
 from pathlib import Path
 
 def extract_freq_data(files_list, freq_range_str, selected_params, use_db=True):
-    """
-    Extract frequency domain data from file list.
-    
-    Args:
-        files_list: list of (BooleanVar, path, metadata_dict)
-        freq_range_str: e.g. "0.4-4.0ghz"
-        selected_params: list of str like ['s11', 's21']
-        use_db: bool, if True use dB scale, else linear magnitude
-    
-    Returns:
-        list of dicts with keys:
-            'name': str
-            'path': str
-            'freq': ndarray
-            'params': dict mapping param_name -> values_array
-            'color': str or None
-            'linewidth': float
-    """
-    from sparams_io import loadFile
-    
+    """Load each selected file and pull the chosen S-params into name/freq/params dicts."""
+    from sparams_io import get_cached_network, display_name, curve_color
+
     result = []
-    
+
     for v, p, d in files_list:
         if not v.get():
             continue
-        
+
         ext = Path(p).suffix.lower()
         loaded = False
-        
-        if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p', '.csv']:
-            try:
-                ntw_full = d.get('ntwk_full')
-                if ntw_full is None:
-                    ntw_full = loadFile(p)
-                    d['ntwk_full'] = ntw_full
-                
-                cached_range = d.get('cached_range')
-                if cached_range != freq_range_str:
-                    ntw = ntw_full[freq_range_str]
-                    d['ntwk'] = ntw
-                    d['cached_range'] = freq_range_str
-                else:
-                    ntw = d['ntwk']
-                
-                fname = d.get('custom_name') if d.get('is_average') else Path(p).stem
-                
-                params_data = {}
-                for param in selected_params:
-                    s_param = getattr(ntw, param, None)
-                    if s_param is None:
-                        continue
-                    arr = s_param.s_db.flatten() if use_db else s_param.s_mag.flatten()
-                    params_data[param] = arr
-                
-                if params_data:
-                    result.append({
-                        'name': fname,
-                        'path': p,
-                        'freq': ntw.f,
-                        'params': params_data,
-                        'color': d.get('line_color'),
-                        'linewidth': d.get('line_width', 1.0)
-                    })
-                    loaded = True
-                
-            except Exception:
-                pass
-        
+
+        ntw = get_cached_network(p, d, freq_range_str, exts=('.s1p', '.s2p', '.s3p', '.csv'))
+        if ntw is not None:
+            params_data = {}
+            for param in selected_params:
+                s_param = getattr(ntw, param, None)
+                if s_param is None:
+                    continue
+                params_data[param] = s_param.s_db.flatten() if use_db else s_param.s_mag.flatten()
+
+            if params_data:
+                result.append({
+                    'name': display_name(p, d),
+                    'path': p,
+                    'freq': ntw.f,
+                    'params': params_data,
+                    'color': curve_color(d),
+                    'linewidth': d.get('line_width', 1.0)
+                })
+                loaded = True
+
         if not loaded and ext == '.csv' and 's11' in selected_params:
             try:
                 import pandas as pd
@@ -86,7 +50,7 @@ def extract_freq_data(files_list, freq_range_str, selected_params, use_db=True):
                     'path': p,
                     'freq': freq,
                     'params': {'s11': arr},
-                    'color': d.get('line_color'),
+                    'color': curve_color(d),
                     'linewidth': d.get('line_width', 1.0)
                 })
                 
@@ -97,24 +61,7 @@ def extract_freq_data(files_list, freq_range_str, selected_params, use_db=True):
 
 
 def find_extrema(files_data, selected_params, freq_range_ghz, find_minima=True, find_maxima=True):
-    """
-    Find frequency extrema for each file and parameter.
-    
-    Args:
-        files_data: list from extract_freq_data()
-        selected_params: list of param names
-        freq_range_ghz: tuple (min_ghz, max_ghz)
-        find_minima: bool
-        find_maxima: bool
-    
-    Returns:
-        list of dicts with keys:
-            'type': 'min' or 'max'
-            'freq': frequency in Hz
-            'value': value in dB
-            'param': parameter name
-            'file': file name
-    """
+    """Find each param's min/max within the GHz range."""
     range_min_hz = freq_range_ghz[0] * 1e9
     range_max_hz = freq_range_ghz[1] * 1e9
     
@@ -162,17 +109,7 @@ def find_extrema(files_data, selected_params, freq_range_ghz, find_minima=True, 
 
 
 def format_freq_text(extrema_list, freq_range_ghz, use_db=True):
-    """
-    Format extrema data as text output.
-    
-    Args:
-        extrema_list: list from find_extrema()
-        freq_range_ghz: tuple (min_ghz, max_ghz)
-        use_db: bool, if True show dB units, else magnitude
-    
-    Returns:
-        str: formatted text
-    """
+    """Format the extrema list as text."""
     if not extrema_list:
         return ""
     

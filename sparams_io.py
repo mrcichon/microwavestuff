@@ -1,3 +1,6 @@
+import os
+import sys
+import colorsys
 import tempfile
 import pandas as pd
 import numpy as np
@@ -72,12 +75,54 @@ def loadFile(p):
         fx.append(ln if ln.lstrip().startswith(("!", "#")) else ln.replace(",", "."))
     
     t = tempfile.NamedTemporaryFile("w+", delete=False, suffix=Path(p).suffix, encoding="utf-8")
-    t.write("\n".join(fx))
-    t.flush()
-    t.close()
-    
-    network = rf.Network(t.name)
-    return network
+    try:
+        t.write("\n".join(fx))
+        t.flush()
+        t.close()
+        return rf.Network(t.name)        # skrf parses fully here, so the copy is no longer needed
+    finally:
+        os.unlink(t.name)
+
+def display_name(p, d):
+    return d.get('custom_name') if d.get('is_average') else Path(p).stem
+
+
+# matplotlib's default cycle (tab10); files keep the color they got when added
+PALETTE = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+           '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+
+def color_for(i):
+    if i < len(PALETTE):
+        return PALETTE[i]
+    # past the palette, step the hue by the golden angle so no two files ever match
+    h = (i * 0.61803398875) % 1.0
+    r, g, b = colorsys.hsv_to_rgb(h, 0.65, 0.80)
+    return f'#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}'
+
+def curve_color(d):
+    # user override beats the color assigned at add time
+    return d.get('line_color') or d.get('auto_color')
+
+
+def get_cached_network(p, d, freq_range_str, exts=('.s1p', '.s2p', '.s3p')):
+    # load p once into d['ntwk_full'], slice to the range cached on d['ntwk'], return the
+    # slice. returns None (logging why) for non-matching files or on load failure.
+    ext = Path(p).suffix.lower()
+    if not (d.get('is_average', False) or ext in exts):
+        return None
+    try:
+        ntw_full = d.get('ntwk_full')
+        if ntw_full is None:
+            ntw_full = loadFile(p)
+            d['ntwk_full'] = ntw_full
+        if d.get('cached_range') != freq_range_str:
+            d['ntwk'] = ntw_full[freq_range_str]
+            d['cached_range'] = freq_range_str
+        return d['ntwk']
+    except Exception as e:
+        print(f"sparams_io: could not load {p}: {e}", file=sys.stderr)
+        return None
+
 
 def parse_polar_rms(path):
     with open(path, "r", encoding="utf-8", errors="ignore") as f:

@@ -177,7 +177,7 @@ class TabField:
         text = (
             f"Layer {self.current_layer}:  "
             f"Mean: {ls['mean']:.4f}   Variance: {ls['variance']:.4f}   "
-            f"Max Δ: {ls['max_diff']:.4f}   Range: [{ls['min']:.4f}, {ls['max']:.4f}]\n"
+            f"Max diff: {ls['max_diff']:.4f}   Range: [{ls['min']:.4f}, {ls['max']:.4f}]\n"
             f"Global (all layers):  "
             f"Min: {gs['min']:.4f}   Max: {gs['max']:.4f}   "
             f"Range: {gs['range']:.4f}   |Max|: {gs['abs_max']:.4f}"

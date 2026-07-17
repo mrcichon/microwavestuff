@@ -12,19 +12,18 @@ import matplotlib.colors
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib.patches as mpatches
 
+import skrf_patch  # noqa: F401  installs the skrf time_gate/delay patch for any entry point
+
 from ui_tab_freq import TabFreq
 from ui_tab_time import TabTime
 from ui_tab_regex import TabRegex
 from ui_tab_overlap import TabOverlap
-from ui_tab_variance import TabVariance
 from ui_tab_shape import TabShapeComparison
-from ui_tab_integrate import TabIntegrate
 from ui_tab_td_analysis import TabTDAnalysis
 from ui_tab_polar import TabPolar
-from ui_tab_rozpierdol import TabRozpierdol as TabOverlay
+from ui_tab_overlay import TabOverlay
 from ui_tab_field import TabField
 
-ML_AVAILABLE = False
 
 class ValidatedDoubleVar(tk.DoubleVar):
     def __init__(self, *args, **kwargs):
@@ -54,7 +53,8 @@ class App(tk.Tk):
         self.fmin = ValidatedDoubleVar(value=0.4)
         self.fmax = ValidatedDoubleVar(value=4.0)
         self.avgCounter = 0
-        
+        self.colorCounter = 0
+
         self.current_tab = None
         self.marker_data = {}
         self._marker_figs = set()
@@ -141,12 +141,8 @@ class App(tk.Tk):
         self._create_time_tab()
         self._create_regex_tab()
         self._create_overlap_tab()
-        self._create_variance_tab()
         self._create_shape_tab()
-        self._create_integrate_tab()
         self._create_td_analysis_tab()
-        if ML_AVAILABLE:
-            self._create_ml_tab()
         self._create_polar_tab()
         self._create_overlay_tab()
         self._create_field_tab()
@@ -358,36 +354,6 @@ class App(tk.Tk):
             get_regex_tab_func=lambda: self.tab_regex
         )
 
-    def _create_variance_tab(self):
-        frmV = ttk.Frame(self.nb)
-        self.nb.add(frmV, text="Variance Analysis")
-        
-        self.figV, self.axV = plt.subplots(figsize=(10,8))
-        self.cvV = FigureCanvasTkAgg(self.figV, master=frmV)
-        self.cvV.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        
-        self.tbV = NavigationToolbar2Tk(self.cvV, frmV)
-        self.tbV.update()
-        self.tbV.pack(fill=tk.X)
-        
-        control_frame_V = ttk.Frame(frmV)
-        control_frame_V.pack(side=tk.BOTTOM, fill=tk.X)
-
-        self.tab_variance = TabVariance(
-            parent=frmV,
-            control_frame=control_frame_V,
-            fig=self.figV,
-            ax=self.axV,
-            canvas=self.cvV,
-            get_files_func=self.get_files,
-            get_freq_range_func=self.get_freq_range
-        )
-        
-        self.cvV.mpl_connect('button_press_event', self._onClickVar)
-        self.cvV.mpl_connect('pick_event', self._onPickVar)
-        self.cvV.mpl_connect('motion_notify_event', self._onMotionVar)
-        self._hook_marker_redraw(self.figV, self.cvV)
-    
     def _create_shape_tab(self):
         frmSC = ttk.Frame(self.nb)
         self.nb.add(frmSC, text="Shape Comparison")
@@ -408,32 +374,6 @@ class App(tk.Tk):
             control_frame=control_frame_SC,
             fig=self.figSC,
             canvas=self.cvSC,
-            get_files_func=self.get_files,
-            get_freq_range_func=self.get_freq_range,
-            get_scale_mode_func=self.get_scale_mode
-        )
-    
-    def _create_integrate_tab(self):
-        frmI = ttk.Frame(self.nb)
-        self.nb.add(frmI, text="Integration")
-        
-        control_frame_I = ttk.Frame(frmI)
-        control_frame_I.pack(side=tk.BOTTOM, fill=tk.X)
-        
-        self.figI, self.axI = plt.subplots(figsize=(10,8))
-        self.cvI = FigureCanvasTkAgg(self.figI, master=frmI)
-        self.cvI.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        
-        self.tbI = NavigationToolbar2Tk(self.cvI, frmI)
-        self.tbI.update()
-        self.tbI.pack(fill=tk.X)
-        
-        self.tab_integrate = TabIntegrate(
-            parent=frmI,
-            control_frame=control_frame_I,
-            fig=self.figI,
-            ax=self.axI,
-            canvas=self.cvI,
             get_files_func=self.get_files,
             get_freq_range_func=self.get_freq_range,
             get_scale_mode_func=self.get_scale_mode
@@ -466,26 +406,6 @@ class App(tk.Tk):
         self.cvTDA.mpl_connect('button_press_event', self._onClickTDA)
         self._hook_marker_redraw(self.figTDA, self.cvTDA)
     
-    def _create_ml_tab(self):
-        frmM = ttk.Frame(self.nb)
-        self.nb.add(frmM, text="Model Training")
-        
-        self.figM = plt.figure(figsize=(12,5))
-        self.cvM = FigureCanvasTkAgg(self.figM, master=frmM)
-        self.cvM.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        
-        self.tbM = NavigationToolbar2Tk(self.cvM, frmM)
-        self.tbM.update()
-        self.tbM.pack(fill=tk.X)
-        
-        self.tab_ml = TabMLTraining(
-            parent=frmM,
-            fig=self.figM,
-            canvas=self.cvM,
-            get_files_func=self.get_files,
-            get_freq_range_func=self.get_freq_range
-        )
-        
     def _create_polar_tab(self):
         frmPolar = ttk.Frame(self.nb)
         self.nb.add(frmPolar, text="Polar Plots")
@@ -868,6 +788,13 @@ class App(tk.Tk):
     def get_scale_mode(self):
         return self.use_db_scale.get()
     
+    def _nextColor(self):
+        # hand out one palette color per added file, never reused on reorder/delete
+        from sparams_io import color_for
+        c = color_for(self.colorCounter)
+        self.colorCounter += 1
+        return c
+
     def _addFiles(self):
         pth = filedialog.askopenfilenames(
             title="Wybierz pliki Touchstone (.sNp, .s1p, .csv)",
@@ -882,7 +809,7 @@ class App(tk.Tk):
                 chk = ttk.Checkbutton(self.fbox, text=Path(p).name, variable=v, command=self._updAll)
                 chk.pack(anchor="w")
                 chk.bind("<Button-3>", lambda e, path=p: self._showStyleMenu(e, path))
-                d = {'line_color': None, 'line_width': 1.0}
+                d = {'line_color': None, 'auto_color': self._nextColor(), 'line_width': 1.0}
                 self.fls.append((v, p, d))
         self.fileListCanvas.configure(scrollregion=self.fileListCanvas.bbox("all"))
         self._updAll()
@@ -1026,7 +953,7 @@ class App(tk.Tk):
                     d['ntwk_full'] = ntw_full
                 networks.append(ntw_full)
                 v.set(False)
-            except:
+            except Exception:
                 pass
         
         if len(networks) < 2:
@@ -1050,6 +977,7 @@ class App(tk.Tk):
             'is_average': True,
             'source_files': [self.fls[i][1] for i in indices],
             'line_color': None,
+            'auto_color': self._nextColor(),
             'line_width': 2.0,
             'custom_name': name
         }
@@ -1076,7 +1004,7 @@ class App(tk.Tk):
             try:
                 ntw = loadFile(filepath)
                 networks.append(ntw)
-            except:
+            except Exception:
                 pass
         
         if len(networks) < 2:
@@ -1100,6 +1028,7 @@ class App(tk.Tk):
             'is_average': True,
             'source_files': list(files),
             'line_color': None,
+            'auto_color': self._nextColor(),
             'line_width': 2.0,
             'custom_name': name
         }
@@ -1171,7 +1100,7 @@ class App(tk.Tk):
                         try:
                             ntw = loadFile(filepath)
                             networks.append(ntw)
-                        except:
+                        except Exception:
                             pass
                     
                     if len(networks) < 2:
@@ -1195,6 +1124,7 @@ class App(tk.Tk):
                         'is_average': True,
                         'source_files': file_list,
                         'line_color': None,
+                        'auto_color': self._nextColor(),
                         'line_width': 2.0,
                         'custom_name': avg_name
                     }
@@ -1258,15 +1188,11 @@ class App(tk.Tk):
             "Time domain": self.tab_time,
             "Regex Highlighting": self.tab_regex,
             "Range Overlaps": self.tab_overlap,
-            "Variance Analysis": self.tab_variance,
             "Shape Comparison": self.tab_shape,
-            "Integration": self.tab_integrate,
             "TD Analysis": self.tab_td_analysis,
             "Polar Plots": self.tab_polar,
             "S-Param Overlay": self.tab_overlay,
         }
-        if ML_AVAILABLE:
-            tab_map["Model Training"] = self.tab_ml
         return tab_map.get(name)
     
     def _updAll(self):
@@ -1384,43 +1310,6 @@ class App(tk.Tk):
             ev.canvas.draw()
     
     def _onPick(self, ev):
-        pass
-    
-    def _onClickVar(self, ev):
-        if ev.button == 3:
-            self._onRightClickMarker(ev)
-            return
-        if not self.markers_enabled.get():
-            return
-        if ev.inaxes is None:
-            return
-
-        x, y = ev.xdata, ev.ydata
-        fig = ev.canvas.figure
-        fig_key = id(fig)
-
-        marker = ev.inaxes.plot(x, y, 'rx', markersize=10, markeredgewidth=2)[0]
-        text = ev.inaxes.text(x, y, f'  ({x:.3e}, {y:.3e})',
-                             fontsize=9, color='red',
-                             verticalalignment='bottom')
-
-        panel_text = f"Variance marker: freq={x:.3e} Hz, variance={y:.3e}\n"
-
-        if fig_key not in self.marker_data:
-            self.marker_data[fig_key] = []
-        self.marker_data[fig_key].append({
-            'x': x, 'y': y, 'label': 'variance', 'color': 'red',
-            'subplot_key': ev.inaxes.get_title(), 'panel_text': panel_text,
-            'annotation_text': '', 'style': 'freeform',
-            '_artists': [marker, text],
-        })
-        self._update_text_panel()
-        ev.canvas.draw()
-    
-    def _onPickVar(self, ev):
-        pass
-    
-    def _onMotionVar(self, ev):
         pass
     
     def _onClickTDA(self, ev):
@@ -1546,12 +1435,13 @@ class App(tk.Tk):
         dialog.transient(self)
         dialog.grab_set()
         
-        current_color = file_data.get('line_color')
+        from sparams_io import curve_color
+        current_color = curve_color(file_data)
         if current_color:
             try:
                 rgb = matplotlib.colors.to_rgb(current_color)
                 r, g, b = [int(x * 255) for x in rgb]
-            except:
+            except Exception:
                 r, g, b = 128, 128, 128
         else:
             r, g, b = 128, 128, 128

@@ -1,8 +1,7 @@
+import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import numpy as np
-import pandas as pd
-from pathlib import Path
 
 from analysis_shape import compute_shape_matrix, format_shape_text
 
@@ -32,8 +31,10 @@ class TabShapeComparison:
         self.max_lag = tk.IntVar(value=5)
         
         self.shape_data = None
-        
+
         self._build_ui()
+        from ui_util import bind_enter
+        bind_enter(self.control_frame, self.update)
     
     def _build_ui(self):
         
@@ -69,7 +70,7 @@ class TabShapeComparison:
         self.adapt_frame.pack_forget()
         
         ttk.Label(self.adapt_frame, text="Adaptive:").pack(side=tk.LEFT, padx=(0,5))
-        ttk.Label(self.adapt_frame, text="±:").pack(side=tk.LEFT)
+        ttk.Label(self.adapt_frame, text="+/-:").pack(side=tk.LEFT)
         ttk.Spinbox(self.adapt_frame, from_=1.0, to=4.0, increment=0.5,
                    textvariable=self.shape_alpha, width=5,
                    command=self.update).pack(side=tk.LEFT, padx=2)
@@ -107,44 +108,24 @@ class TabShapeComparison:
         fmin, fmax, sstr = self.get_freq_range()
         param = self.shape_param.get()
         
+        from sparams_io import get_cached_network, display_name
+
         files_data = []
         for v, p, d in self.get_files():
             if not v.get():
                 continue
-            
-            ext = Path(p).suffix.lower()
-            if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
-                try:
-                    from sparams_io import loadFile
-                    
-                    ntw_full = d.get('ntwk_full')
-                    if ntw_full is None:
-                        ntw_full = loadFile(p)
-                        d['ntwk_full'] = ntw_full
-                    
-                    cached_range = d.get('cached_range')
-                    if cached_range != sstr:
-                        ntw = ntw_full[sstr]
-                        d['ntwk'] = ntw
-                        d['cached_range'] = sstr
-                    else:
-                        ntw = d['ntwk']
-                    
-                    fname = d.get('custom_name') if d.get('is_average') else Path(p).stem
-                    
-                    use_db = self.get_scale_mode()
-                    s_param = getattr(ntw, param)
-                    s_data = s_param.s_db.flatten() if use_db else s_param.s_mag.flatten()
-                    
-                    files_data.append({
-                        'name': fname,
-                        'signal': s_data,
-                        'freq': ntw.f
-                    })
-                    
-                except Exception:
-                    pass
-        
+
+            ntw = get_cached_network(p, d, sstr)
+            if ntw is None:
+                continue
+
+            try:
+                s_param = getattr(ntw, param)
+                s_data = s_param.s_db.flatten() if self.get_scale_mode() else s_param.s_mag.flatten()
+                files_data.append({'name': display_name(p, d), 'signal': s_data, 'freq': ntw.f})
+            except Exception as e:
+                print(f"shape: {display_name(p, d)} skipped: {e}", file=sys.stderr)
+
         return files_data
     
     def update(self):
@@ -295,25 +276,7 @@ class TabShapeComparison:
                         f.write(f"{ni}\t{nj}\t{matrix[i, j]:.6f}\t{lag}\n")
             
             messagebox.showinfo("Export complete", f"Matrix saved to {filename}")
-    
-    def _export_csv(self):
-        if self.shape_data is None:
-            messagebox.showinfo("No data", "No shape-comparison data to export")
-            return
-        
-        filename = filedialog.asksaveasfilename(
-            title="Save matrix as CSV",
-            defaultextension=".csv",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-        )
-        
-        if filename:
-            names = self.shape_data['names']
-            df = pd.DataFrame(self.shape_data['matrix'], index=names, columns=names)
-            df.to_csv(filename)
-            
-            messagebox.showinfo("Export complete", f"Matrix saved to {filename}")
-    
+
     def get_text_output(self):
         if self.shape_data is None:
             return ""

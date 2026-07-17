@@ -1,8 +1,8 @@
 import tkinter as tk
 from tkinter import ttk
-from analysis_rozpierdol import extract_overlay_data, format_overlay_text
+from analysis_overlay import extract_overlay_data, format_overlay_text
 
-class TabRozpierdol:
+class TabOverlay:
     def __init__(self, parent, control_frame, fig, canvas,
                  legend_frame, legend_canvas,
                  get_files_func, get_freq_range_func,

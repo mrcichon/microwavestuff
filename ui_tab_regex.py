@@ -3,8 +3,8 @@ from tkinter import ttk, filedialog, messagebox
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors
-from pathlib import Path
 import re
+import sys
 
 from analysis_regex import (extract_regex_value, find_best_drop, compute_kendall_tau,
                             compute_max_displacement, mask_to_ranges, compute_small_diffs,
@@ -135,9 +135,9 @@ class TabRegex:
 
         ttk.Separator(frame2, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
 
-        ttk.Checkbutton(frame2, text="Kendall \u03c4",
+        ttk.Checkbutton(frame2, text="Kendall tau",
                          variable=self.regex_tau, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame2, text="|\u03c4|\u2265").pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Label(frame2, text="|tau|>=").pack(side=tk.LEFT, padx=(2, 0))
         tau_entry = ttk.Entry(frame2, textvariable=self.regex_tau_threshold, width=4)
         tau_entry.pack(side=tk.LEFT, padx=2)
         tau_entry.bind("<Return>", lambda e: self.update())
@@ -146,7 +146,7 @@ class TabRegex:
 
         ttk.Checkbutton(frame2, text="Max disp.",
                          variable=self.regex_disp, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame2, text="\u2264").pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Label(frame2, text="<=").pack(side=tk.LEFT, padx=(2, 0))
         disp_entry = ttk.Entry(frame2, textvariable=self.regex_disp_threshold, width=3)
         disp_entry.pack(side=tk.LEFT, padx=2)
         disp_entry.bind("<Return>", lambda e: self.update())
@@ -173,7 +173,7 @@ class TabRegex:
         ttk.Label(frame3, text="Window:").pack(side=tk.LEFT, padx=(8, 2))
         ttk.Spinbox(frame3, from_=3, to=201, increment=2, width=4,
                      textvariable=self.regex_congru_window, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame3, text="Congr.≥").pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Label(frame3, text="Congr>=").pack(side=tk.LEFT, padx=(8, 0))
         congru_entry = ttk.Entry(frame3, textvariable=self.regex_congru_threshold, width=5)
         congru_entry.pack(side=tk.LEFT, padx=2)
         congru_entry.bind("<Return>", lambda e: self.update())
@@ -184,7 +184,7 @@ class TabRegex:
         ttk.Separator(frame3, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
         ttk.Checkbutton(frame3, text="Track shift",
                          variable=self.regex_track, command=self.update).pack(side=tk.LEFT, padx=2)
-        ttk.Label(frame3, text="Mono≥").pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Label(frame3, text="Mono>=").pack(side=tk.LEFT, padx=(8, 0))
         mono_entry = ttk.Entry(frame3, textvariable=self.regex_track_mono, width=5)
         mono_entry.pack(side=tk.LEFT, padx=2)
         mono_entry.bind("<Return>", lambda e: self.update())
@@ -194,7 +194,7 @@ class TabRegex:
         try:
             re.compile(pattern)
             self.regex_entry.configure(foreground="black")
-        except:
+        except Exception:
             self.regex_entry.configure(foreground="red")
 
     def _set_pattern(self, pattern):
@@ -202,6 +202,7 @@ class TabRegex:
         self.update()
 
     def _get_files_data(self):
+        from sparams_io import get_cached_network, display_name
         fmin, fmax, sstr = self.get_freq_range()
         param = self.regex_param.get()
         pattern = self.regex_pattern.get()
@@ -210,7 +211,7 @@ class TabRegex:
         all_files_info = []
 
         for v, p, d in self.get_files():
-            fname = d.get('custom_name') if d.get('is_average') else Path(p).stem
+            fname = display_name(p, d)
             value = extract_regex_value(fname, pattern, self.regex_group.get())
 
             if v.get():
@@ -220,47 +221,32 @@ class TabRegex:
             if not v.get() or value is None:
                 continue
 
-            ext = Path(p).suffix.lower()
+            ntw = get_cached_network(p, d, sstr)
+            if ntw is None:
+                continue
 
-            if d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']:
-                try:
-                    from sparams_io import loadFile
+            try:
+                if self.regex_gate.get():
+                    raw_data = getattr(ntw, param).time_gate(
+                        center=self.regex_gate_center.get(),
+                        span=self.regex_gate_span.get())
+                else:
+                    raw_data = getattr(ntw, param)
 
-                    ntw_full = d.get('ntwk_full')
-                    if ntw_full is None:
-                        ntw_full = loadFile(p)
-                        d['ntwk_full'] = ntw_full
+                if self.regex_phase.get():
+                    phase_deg = np.degrees(np.unwrap(np.angle(raw_data.s.flatten())))
+                    s_data = (phase_deg + 180) % 360 - 180
+                else:
+                    s_data = raw_data.s_db.flatten() if self.get_scale_mode() else raw_data.s_mag.flatten()
 
-                    ntw = ntw_full[sstr]
+                if self.regex_envelope.get():
+                    from scipy.ndimage import uniform_filter1d
+                    s_data = uniform_filter1d(s_data, size=max(1, self.regex_envelope_n.get()), mode="nearest")
 
-                    if self.regex_gate.get():
-                        raw_param = getattr(ntw, param)
-                        gated_param = raw_param.time_gate(
-                            center=self.regex_gate_center.get(),
-                            span=self.regex_gate_span.get()
-                        )
-                        raw_data = gated_param
-                    else:
-                        raw_data = getattr(ntw, param)
+                files_data.append((fname, value, ntw.f, s_data, d))
 
-                    freq = ntw.f
-
-                    if self.regex_phase.get():
-                        phase_rad = np.unwrap(np.angle(raw_data.s.flatten()))
-                        phase_deg = np.degrees(phase_rad)
-                        s_data = (phase_deg + 180) % 360 - 180
-                    else:
-                        use_db = self.get_scale_mode()
-                        s_data = raw_data.s_db.flatten() if use_db else raw_data.s_mag.flatten()
-
-                    if self.regex_envelope.get():
-                        from scipy.ndimage import uniform_filter1d
-                        s_data = uniform_filter1d(s_data, size=max(1, self.regex_envelope_n.get()), mode="nearest")
-
-                    files_data.append((fname, value, freq, s_data, d))
-
-                except Exception:
-                    pass
+            except Exception as e:
+                print(f"regex: {fname} skipped: {e}", file=sys.stderr)
 
         self.all_files_info = all_files_info
         return files_data
@@ -284,8 +270,15 @@ class TabRegex:
         files_data = self._get_files_data()
 
         if not files_data:
-            ax.text(0.5, 0.5, f"No files match pattern: {self.regex_pattern.get()}\nCheck regex and capture group",
-                    ha="center", va="center", fontsize=12, color="gray")
+            info = getattr(self, "all_files_info", [])
+            n_match = sum(1 for s in info if s.startswith("Y"))
+            if not info:
+                msg = "No files selected"
+            elif n_match == 0:
+                msg = f"{len(info)} selected, none match pattern: {self.regex_pattern.get()}"
+            else:
+                msg = f"{n_match} matched but none could be loaded for {self.get_freq_range()[2]}\n(see terminal for skip reasons)"
+            ax.text(0.5, 0.5, msg, ha="center", va="center", fontsize=12, color="gray")
             ax.set_xticks([])
             ax.set_yticks([])
             self.canvas.draw()
@@ -294,8 +287,10 @@ class TabRegex:
             return
 
         files_data.sort(key=lambda x: x[1])
-        freqs = files_data[0][2]
-        s_matrix = np.array([d[3] for d in files_data])
+        # files may have different sweeps; the per-frequency analysis needs one shared grid,
+        # so resample every curve onto the densest one (a no-op when they already match)
+        freqs = max((d[2] for d in files_data), key=len)
+        s_matrix = np.array([np.interp(freqs, d[2], d[3]) for d in files_data])
         labels = [d[0] for d in files_data]
         n_pts = len(freqs)
 
@@ -349,13 +344,15 @@ class TabRegex:
 
         dropped_set = set(dropped_idx) if n_drop > 0 else set()
         legend_items = []
+        # gradient follows the sorted regex value, so colors shift when files are
+        # added; that ordering is the point here, unlike the per-file colors elsewhere
+        cmap = plt.cm.viridis(np.linspace(0, 1, len(files_data)))
         for i, (fname, value, freq, s_data, file_dict) in enumerate(files_data):
             is_dropped = i in dropped_set
             kwargs = {'label': fname}
             if file_dict.get('line_color'):
                 kwargs['color'] = file_dict['line_color']
             else:
-                cmap = plt.cm.viridis(np.linspace(0, 1, len(files_data)))
                 kwargs['color'] = cmap[i]
             if file_dict.get('line_width', 1.0) != 1.0:
                 kwargs['linewidth'] = file_dict['line_width']
@@ -411,7 +408,7 @@ class TabRegex:
         if self.regex_phase.get():
             title += " Phase"
         if self.regex_gate.get():
-            title += f" [Gated: {self.regex_gate_center.get()}\u00b1{self.regex_gate_span.get()/2}ns]"
+            title += f" [Gated: {self.regex_gate_center.get()}+/-{self.regex_gate_span.get()/2}ns]"
         ax.set_title(title)
         ax.grid(True)
 
@@ -480,7 +477,7 @@ class TabRegex:
         icpt = region['intercept'] / 1e6
         xs = np.array([v.min(), v.max()])
         ax.plot(xs, slope * xs + icpt, '--', color='gray')
-        ax.set_title(f"{slope:.1f} MHz/unit\nR²={region['r2']:.2f}  "
+        ax.set_title(f"{slope:.1f} MHz/unit\nR^2={region['r2']:.2f}  "
                      f"@ {region['f0']/1e9:.2f}-{region['f1']/1e9:.2f} GHz", fontsize=8)
         ax.set_xlabel("regex value", fontsize=8)
         ax.set_ylabel("feature shift [MHz]", fontsize=8)
@@ -568,26 +565,19 @@ class TabRegex:
 
     def _stats_collect(self):
         # selected files matching the pattern, each with its full (unsliced) network loaded
-        from sparams_io import loadFile
+        from sparams_io import get_cached_network, display_name
+        sstr = self.get_freq_range()[2]
         out = []
         for v, p, d in self.get_files():
             if not v.get():
                 continue
-            fname = d.get('custom_name') if d.get('is_average') else Path(p).stem
-            val = extract_regex_value(fname, self.regex_pattern.get(), self.regex_group.get())
+            name = display_name(p, d)
+            val = extract_regex_value(name, self.regex_pattern.get(), self.regex_group.get())
             if val is None:
                 continue
-            ext = Path(p).suffix.lower()
-            if not (d.get('is_average', False) or ext in ['.s1p', '.s2p', '.s3p']):
+            if get_cached_network(p, d, sstr) is None:   # side effect: loads d['ntwk_full']
                 continue
-            try:
-                ntw_full = d.get('ntwk_full')
-                if ntw_full is None:
-                    ntw_full = loadFile(p)
-                    d['ntwk_full'] = ntw_full
-            except Exception:
-                continue
-            out.append((fname, val, ntw_full))
+            out.append((name, val, d['ntwk_full']))
         return out
 
     def _stats_recalc(self, txt, mode_var, fmin_var, fmax_var, single_var, grouped):
@@ -603,8 +593,8 @@ class TabRegex:
                 try:
                     ntw = full[sstr]
                     curves.append((name, val, ntw.f, getattr(ntw, param).s_db.flatten()))
-                except Exception:
-                    continue
+                except Exception as e:
+                    print(f"stats: {name} skipped: {e}", file=sys.stderr)
             if curves:
                 curves.sort(key=lambda x: x[1])
                 ref = max((c[2] for c in curves), key=len)
@@ -625,8 +615,8 @@ class TabRegex:
                     s = getattr(full, param).s_db.flatten()
                     i = int(np.argmin(np.abs(f - single * 1e9)))
                     vals.append((name, val, float(s[i])))
-                except Exception:
-                    continue
+                except Exception as e:
+                    print(f"stats: {name} skipped: {e}", file=sys.stderr)
             if vals:
                 vals.sort(key=lambda x: x[1])
                 if grouped:
@@ -657,12 +647,12 @@ class TabRegex:
         ttk.Label(top, text="Analysis:").pack(side=tk.LEFT)
         ttk.Radiobutton(top, text="Range", value="range", variable=mode_var).pack(side=tk.LEFT)
         ttk.Label(top, text="fmin[GHz]").pack(side=tk.LEFT, padx=(6, 1))
-        e1 = ttk.Entry(top, textvariable=fmin_var, width=7); e1.pack(side=tk.LEFT)
+        ttk.Entry(top, textvariable=fmin_var, width=7).pack(side=tk.LEFT)
         ttk.Label(top, text="fmax[GHz]").pack(side=tk.LEFT, padx=(6, 1))
-        e2 = ttk.Entry(top, textvariable=fmax_var, width=7); e2.pack(side=tk.LEFT)
+        ttk.Entry(top, textvariable=fmax_var, width=7).pack(side=tk.LEFT)
         ttk.Radiobutton(top, text="Single", value="single", variable=mode_var).pack(side=tk.LEFT, padx=(10, 0))
         ttk.Label(top, text="f[GHz]").pack(side=tk.LEFT, padx=(6, 1))
-        e3 = ttk.Entry(top, textvariable=single_var, width=7); e3.pack(side=tk.LEFT)
+        ttk.Entry(top, textvariable=single_var, width=7).pack(side=tk.LEFT)
 
         body = ttk.Frame(win)
         body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -675,8 +665,6 @@ class TabRegex:
         def recalc():
             self._stats_recalc(txt, mode_var, fmin_var, fmax_var, single_var, grouped)
         ttk.Button(top, text="Recalc", command=recalc).pack(side=tk.LEFT, padx=10)
-        for e in (e1, e2, e3):
-            e.bind("<Return>", lambda ev: recalc())
 
         bottom = ttk.Frame(win)
         bottom.pack(side=tk.BOTTOM, fill=tk.X, padx=6, pady=4)
@@ -685,6 +673,9 @@ class TabRegex:
         ttk.Button(bottom, text="Save txt", command=lambda: self._stats_save(txt)).pack(side=tk.LEFT, padx=2)
         ttk.Button(bottom, text="Export csv",
                    command=lambda: self._stats_csv(mode_var, fmin_var, fmax_var, single_var)).pack(side=tk.LEFT, padx=2)
+
+        from ui_util import bind_enter
+        bind_enter(top, recalc)
         recalc()
 
     def _stats_save(self, txt):

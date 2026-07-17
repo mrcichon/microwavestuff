@@ -1,0 +1,128 @@
+# construct each live tab and run update() on empty + the real file family, asserting the
+# family reaches the plot and empty draws nothing. needs a display (skips otherwise).
+import tkinter as tk
+from tkinter import ttk
+
+import matplotlib.pyplot as plt
+import pytest
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+from ui_tab_freq import TabFreq
+from ui_tab_time import TabTime
+from ui_tab_regex import TabRegex
+from ui_tab_shape import TabShapeComparison
+from ui_tab_td_analysis import TabTDAnalysis
+from ui_tab_overlay import TabOverlay
+from ui_tab_overlap import TabOverlap
+from ui_tab_polar import TabPolar
+from ui_tab_field import TabField
+
+
+def _callbacks(files):
+    return {
+        "files": lambda: files,
+        "freq": lambda: (0.8, 2.0, "0.8-2.0ghz"),
+        "legend": lambda: False,
+        "scale": lambda: True,
+        "regex": lambda: None,
+    }
+
+
+def _make_widgets(tk_root, ax=False, legend=False):
+    parent = ttk.Frame(tk_root)
+    control = ttk.Frame(parent)
+    fig = plt.figure()
+    canvas = FigureCanvasTkAgg(fig, master=parent)
+    parts = [parent, control, fig]
+    if ax:
+        parts.append(fig.add_subplot(111))
+    parts.append(canvas)
+    if legend:
+        parts += [ttk.Frame(parent), tk.Canvas(parent)]
+    return parts, fig
+
+
+def _build(name, tk_root, files):
+    c = _callbacks(files)
+    if name == "freq":
+        p, fig = _make_widgets(tk_root, legend=True)
+        return TabFreq(*p, c["files"], c["freq"], c["legend"], c["scale"]), fig
+    if name == "time":
+        p, fig = _make_widgets(tk_root, legend=True)
+        return TabTime(*p, c["files"], c["freq"], c["legend"], c["scale"]), fig
+    if name == "regex":
+        p, fig = _make_widgets(tk_root, legend=True)
+        return TabRegex(*p, c["files"], c["freq"], c["legend"], c["scale"]), fig
+    if name == "overlay":
+        p, fig = _make_widgets(tk_root, legend=True)
+        return TabOverlay(*p, c["files"], c["freq"], c["legend"]), fig
+    if name == "shape":
+        p, fig = _make_widgets(tk_root)
+        return TabShapeComparison(*p, c["files"], c["freq"], c["scale"]), fig
+    if name == "td":
+        p, fig = _make_widgets(tk_root)
+        return TabTDAnalysis(*p, c["files"], c["freq"]), fig
+    if name == "overlap":
+        p, fig = _make_widgets(tk_root, ax=True)
+        return TabOverlap(*p, c["files"], c["freq"], c["regex"]), fig
+    if name == "polar":
+        p, fig = _make_widgets(tk_root, ax=True)
+        return TabPolar(*p), fig
+    if name == "field":
+        p, fig = _make_widgets(tk_root, ax=True)
+        return TabField(*p), fig
+    raise KeyError(name)
+
+
+ALL_TABS = ["freq", "time", "regex", "overlay", "shape", "td", "overlap", "polar", "field"]
+# tabs that load the S-param file family through the shared caching path
+DATA_TABS = ["freq", "time", "regex", "overlay", "shape", "td"]
+
+
+def _prep(name, tab, files):
+    # set the minimum state a tab needs to actually plot, so the data test exercises
+    # the real path instead of a default-off no-op
+    if name == "freq":
+        tab.s11_var.set(True)
+    elif name == "overlay":
+        for _v, _p, d in files:
+            d["overlay_params"] = {"s11"}
+
+
+def _drew_something(fig):
+    return any(ax.lines or ax.images or ax.patches or ax.collections for ax in fig.axes)
+
+
+@pytest.mark.parametrize("name", ALL_TABS)
+def test_tab_update_empty_does_not_raise_or_fabricate(tk_root, name):
+    # the no-files state (e.g. a tab just switched to) must not raise and must not
+    # invent data on the canvas
+    tab, fig = _build(name, tk_root, [])
+    tab.update()
+    assert not _drew_something(fig), f"{name} drew artifacts from empty input"
+
+
+@pytest.mark.parametrize("name", DATA_TABS)
+def test_tab_plots_family_data(tk_root, name, family_files):
+    tab, fig = _build(name, tk_root, family_files)
+    _prep(name, tab, family_files)
+    tab.update()
+    # the family must actually reach the canvas, not get swallowed by a silent except
+    assert _drew_something(fig), f"{name}: update() produced nothing from the file family"
+
+
+def test_bind_enter_installs_return_binding(tk_root):
+    from ui_util import bind_enter
+    frame = ttk.Frame(tk_root)
+    entry = ttk.Entry(frame)
+    nested = ttk.Entry(ttk.Frame(frame))
+    bind_enter(frame, lambda: None)
+    assert entry.bind("<Return>")        # bound directly under the container
+    assert nested.bind("<Return>")       # and recursively in nested frames
+
+
+def test_regex_handles_files_with_different_point_counts(tk_root, ragged_files):
+    # real sweeps differ in length; the per-frequency matrix must be resampled, not crash
+    tab, fig = _build("regex", tk_root, ragged_files)
+    tab.update()
+    assert any(ax.lines for ax in fig.axes)
