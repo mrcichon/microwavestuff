@@ -18,7 +18,8 @@ class TabRegex:
     def __init__(self, parent, control_frame, fig, canvas,
                  legend_frame, legend_canvas,
                  get_files_func, get_freq_range_func,
-                 get_legend_on_plot_func, get_scale_mode_func):
+                 get_legend_on_plot_func, get_scale_mode_func,
+                 get_window_name_func=lambda: ""):
         self.parent = parent
         self.control_frame = control_frame
         self.fig = fig
@@ -29,6 +30,7 @@ class TabRegex:
         self.get_freq_range = get_freq_range_func
         self.get_legend_on_plot = get_legend_on_plot_func
         self.get_scale_mode = get_scale_mode_func
+        self.get_window_name = get_window_name_func
 
         self.regex_pattern = tk.StringVar(value=r'_(\d+)ml')
         self.regex_group = tk.IntVar(value=1)
@@ -671,28 +673,30 @@ class TabRegex:
         ttk.Button(bottom, text="Copy all",
                    command=lambda: (win.clipboard_clear(), win.clipboard_append(txt.get("1.0", tk.END)))).pack(side=tk.LEFT, padx=2)
         ttk.Button(bottom, text="Save txt", command=lambda: self._stats_save(txt)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bottom, text="Export xlsx",
+                   command=lambda: self._stats_export(mode_var, fmin_var, fmax_var, single_var, "xlsx")).pack(side=tk.LEFT, padx=2)
         ttk.Button(bottom, text="Export csv",
-                   command=lambda: self._stats_csv(mode_var, fmin_var, fmax_var, single_var)).pack(side=tk.LEFT, padx=2)
+                   command=lambda: self._stats_export(mode_var, fmin_var, fmax_var, single_var, "csv")).pack(side=tk.LEFT, padx=2)
 
         from ui_util import bind_enter
         bind_enter(top, recalc)
         recalc()
 
     def _stats_save(self, txt):
-        fn = filedialog.asksaveasfilename(defaultextension=".txt",
+        fn = filedialog.asksaveasfilename(defaultextension=".txt", initialfile=self.get_window_name(),
                                           filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if fn:
             with open(fn, "w") as f:
                 f.write(txt.get("1.0", tk.END))
 
-    def _stats_csv(self, mode_var, fmin_var, fmax_var, single_var):
-        import csv
+    def _stats_export(self, mode_var, fmin_var, fmax_var, single_var, fmt):
         files = self._stats_collect()
         if not files:
             messagebox.showinfo("No data", "Nothing to export")
             return
-        fn = filedialog.asksaveasfilename(defaultextension=".csv",
-                                          filetypes=[("CSV files", "*.csv"), ("All files", "*.*")])
+        types = {"xlsx": ("Excel files", "*.xlsx"), "csv": ("CSV files", "*.csv")}
+        fn = filedialog.asksaveasfilename(defaultextension=f".{fmt}", initialfile=self.get_window_name(),
+                                          filetypes=[types[fmt], ("All files", "*.*")])
         if not fn:
             return
         param = self.regex_param.get()
@@ -718,8 +722,23 @@ class TabRegex:
                 rows.append([name, val, float(s[i])])
             header = ["file", "regex_value", f"value_dB_at_{sg:g}GHz"]
         rows.sort(key=lambda r: r[1])
-        with open(fn, "w", newline="") as fp:
-            w = csv.writer(fp)
-            w.writerow(header)
-            w.writerows(rows)
+        if fn.lower().endswith(".xlsx"):
+            try:
+                import openpyxl
+            except ImportError:
+                messagebox.showerror("Missing package", "pip install openpyxl for xlsx export")
+                return
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "stats"
+            ws.append(header)
+            for r in rows:
+                ws.append(r)
+            wb.save(fn)
+        else:
+            import csv
+            with open(fn, "w", newline="") as fp:
+                w = csv.writer(fp)
+                w.writerow(header)
+                w.writerows(rows)
         messagebox.showinfo("Export complete", f"Saved to {fn}")

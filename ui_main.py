@@ -54,6 +54,7 @@ class App(tk.Tk):
         self.fmax = ValidatedDoubleVar(value=4.0)
         self.avgCounter = 0
         self.colorCounter = 0
+        self._window_name = ""
 
         self.current_tab = None
         self.marker_data = {}
@@ -88,7 +89,10 @@ class App(tk.Tk):
         ttk.Button(lfrm, text="Dodaj pliki", command=self._addFiles).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Usu\u0144 wszystkie markery", command=self._clearM).pack(anchor="w", pady=(0,10))
         ttk.Button(lfrm, text="Usu\u0144 zaznaczone pliki", command=self._deleteSelectedFiles).pack(anchor="w", pady=(0,10))
-        ttk.Button(lfrm, text="Deselect all", command=self._deselectAll).pack(anchor="w", pady=(0,10))
+        selfrm = ttk.Frame(lfrm)
+        selfrm.pack(anchor="w", pady=(0,10))
+        ttk.Button(selfrm, text="Select all", command=self._selectAll).pack(side=tk.LEFT)
+        ttk.Button(selfrm, text="Deselect all", command=self._deselectAll).pack(side=tk.LEFT, padx=(4,0))
         ttk.Button(lfrm, text="Average files", command=self._avgFiles).pack(anchor="w", pady=(0,10))
         
         ttk.Checkbutton(lfrm, text="Show legend panel", variable=self.legendVisible,
@@ -146,6 +150,18 @@ class App(tk.Tk):
         self._create_polar_tab()
         self._create_overlay_tab()
         self._create_field_tab()
+        for cv in (self.cvF, self.cvT, self.cvR, self.cvO, self.cvSC, self.cvTDA,
+                   self.cvPolar, self.cvOverlay, self.cvFLD):
+            cv.get_default_filename = lambda cv=cv: self._plotFilename(cv)
+    
+    def _plotFilename(self, cv):
+        # window name plus the first free number in the save dir, any extension
+        base = (self._window_name or "image").replace(" ", "_")
+        d = os.path.expanduser(matplotlib.rcParams['savefig.directory']) or os.getcwd()
+        n = 1
+        while list(Path(d).glob(f"{base}{n}.*")):
+            n += 1
+        return f"{base}{n}.{cv.get_default_filetype()}"
     
     def _create_freq_tab(self):
         frmF = ttk.Frame(self.nb)
@@ -322,7 +338,8 @@ class App(tk.Tk):
             get_files_func=self.get_files,
             get_freq_range_func=self.get_freq_range,
             get_legend_on_plot_func=lambda: self.legendOnPlot.get(),
-            get_scale_mode_func=self.get_scale_mode
+            get_scale_mode_func=self.get_scale_mode,
+            get_window_name_func=self.get_window_name
         )
         
         self.cvR.mpl_connect('button_press_event', self._onClick)
@@ -788,6 +805,9 @@ class App(tk.Tk):
     def get_scale_mode(self):
         return self.use_db_scale.get()
     
+    def get_window_name(self):
+        return self._window_name
+    
     def _nextColor(self):
         # hand out one palette color per added file, never reused on reorder/delete
         from sparams_io import color_for
@@ -857,6 +877,11 @@ class App(tk.Tk):
             self.fileListCanvas.configure(scrollregion=self.fileListCanvas.bbox("all"))
             self._updAll()
             messagebox.showinfo("Files removed", f"Removed {len(toDelete)} items from the list")
+    
+    def _selectAll(self):
+        for v, p, d in self.fls:
+            v.set(True)
+        self._updAll()
     
     def _deselectAll(self):
         for v, p, d in self.fls:
@@ -1377,7 +1402,7 @@ class App(tk.Tk):
     def _nameWindowDialog(self):
         from tkinter import simpledialog
         name = simpledialog.askstring("Name window", "Window name (empty to reset):",
-                                      initialvalue=getattr(self, '_window_name', ''),
+                                      initialvalue=self._window_name,
                                       parent=self)
         if name is None:
             return
